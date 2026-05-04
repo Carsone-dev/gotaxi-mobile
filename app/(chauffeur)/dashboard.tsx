@@ -12,6 +12,7 @@ import { router } from "expo-router";
 import { useAuthStore } from "@/src/stores/authStore";
 import { useChauffeurStats, useChauffeurRevenus, useGoOnline, useGoOffline } from "@/src/hooks/useChauffeur";
 import { useIncomingReservations } from "@/src/hooks/useReservations";
+import { useMyVoyages } from "@/src/hooks/useVoyages";
 import { formatFCFA } from "@/src/utils/formatters";
 import { getErrorMessage } from "@/src/utils/error-handler";
 import { useToast } from "@/src/components/common/Toast";
@@ -24,11 +25,15 @@ export default function DashboardScreen() {
   const { data: stats, isLoading: statsLoading, refetch: refetchStats, isRefetching } = useChauffeurStats();
   const { data: revenus } = useChauffeurRevenus();
   const { data: incoming } = useIncomingReservations();
+  const { data: mesVoyages } = useMyVoyages();
   const { mutateAsync: goOnline, isPending: goingOnline } = useGoOnline();
   const { mutateAsync: goOffline, isPending: goingOffline } = useGoOffline();
 
   const isOnline = stats?.en_ligne ?? false;
   const pendingCount = incoming?.length ?? 0;
+  const voyagesColisActifs = (mesVoyages ?? []).filter(
+    (v) => v.accepte_colis && (v.statut === "PUBLIE" || v.statut === "COMPLET" || v.statut === "EN_COURS"),
+  ).length;
 
   const handleToggleOnline = async () => {
     try {
@@ -115,6 +120,22 @@ export default function DashboardScreen() {
         </Pressable>
       )}
 
+      {voyagesColisActifs > 0 && (
+        <Pressable
+          style={styles.colisAlertCard}
+          onPress={() => router.push("/(chauffeur)/colis" as any)}
+        >
+          <Text style={styles.alertIcon}>📦</Text>
+          <View style={styles.alertInfo}>
+            <Text style={styles.colisAlertTitle}>
+              {voyagesColisActifs} trajet{voyagesColisActifs > 1 ? "s" : ""} avec livraisons actives
+            </Text>
+            <Text style={styles.colisAlertSub}>Gérez vos colis à confirmer et livrer</Text>
+          </View>
+          <Text style={styles.colisAlertArrow}>›</Text>
+        </Pressable>
+      )}
+
       <Text style={styles.sectionTitle}>Actions rapides</Text>
       <View style={styles.quickActions}>
         <Pressable
@@ -136,6 +157,24 @@ export default function DashboardScreen() {
               <Text style={styles.badgeText}>{pendingCount}</Text>
             </View>
           )}
+        </Pressable>
+      </View>
+      <View style={[styles.quickActions, { marginTop: spacing.md }]}>
+        <Pressable
+          style={[styles.qaCard, styles.qaCardColis]}
+          onPress={() => router.push("/(chauffeur)/colis" as any)}
+        >
+          <Text style={styles.qaIcon}>📦</Text>
+          <Text style={styles.qaLabelDark}>Mes Colis</Text>
+          <Text style={styles.qaDescDark}>Confirmer · Transiter · Livrer</Text>
+        </Pressable>
+        <Pressable
+          style={[styles.qaCard, styles.qaCardRevenus]}
+          onPress={() => router.push("/(chauffeur)/revenus" as any)}
+        >
+          <Text style={styles.qaIcon}>💰</Text>
+          <Text style={styles.qaLabel}>Revenus</Text>
+          <Text style={styles.qaDesc}>Historique & stats</Text>
         </Pressable>
       </View>
     </ScrollView>
@@ -248,6 +287,32 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize["2xl"],
     color: colors.warningText,
   },
+  colisAlertCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.successBg,
+    marginHorizontal: spacing["2xl"],
+    borderRadius: radii.lg,
+    padding: spacing.xl,
+    gap: spacing.md,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  colisAlertTitle: {
+    fontSize: typography.fontSize.base,
+    fontFamily: typography.fontFamily.bold,
+    color: colors.primary,
+  },
+  colisAlertSub: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.regular,
+    color: colors.primary,
+  },
+  colisAlertArrow: {
+    fontSize: typography.fontSize["2xl"],
+    color: colors.primary,
+  },
   sectionTitle: {
     fontSize: typography.fontSize.lg,
     fontFamily: typography.fontFamily.bold,
@@ -267,16 +332,34 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
     ...shadows.md,
   },
+  qaCardColis: {
+    backgroundColor: colors.surface,
+    borderWidth: 1.5,
+    borderColor: colors.primary,
+  },
+  qaCardRevenus: {
+    backgroundColor: "#1a1a2e",
+  },
   qaIcon: { fontSize: 32 },
   qaLabel: {
     fontSize: typography.fontSize.base,
     fontFamily: typography.fontFamily.bold,
     color: colors.white,
   },
+  qaLabelDark: {
+    fontSize: typography.fontSize.base,
+    fontFamily: typography.fontFamily.bold,
+    color: colors.primary,
+  },
   qaDesc: {
     fontSize: typography.fontSize.sm,
     fontFamily: typography.fontFamily.regular,
     color: "rgba(255,255,255,0.7)",
+  },
+  qaDescDark: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.regular,
+    color: colors.textSecondary,
   },
   badge: {
     position: "absolute",
