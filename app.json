@@ -44,7 +44,7 @@
       "expo-font"
     ],
     "extra": {
-      "apiUrl": "http://192.168.1.101:8001/api/v1",
+      "apiUrl": "http://192.168.1.102:8001/api/v1",
       "eas": {
         "projectId": "your-eas-project-id"
       }
