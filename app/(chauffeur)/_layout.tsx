@@ -78,6 +78,10 @@ export default function ChauffeurLayout() {
         name="settings"
         options={{ href: null }}
       />
+      <Tabs.Screen
+        name="voyages/navigation"
+        options={{ href: null }}
+      />
     </Tabs>
   );
 }

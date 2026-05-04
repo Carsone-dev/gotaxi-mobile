@@ -823,6 +823,19 @@ export default function VoyageDetailChauffeurScreen() {
                 )}
               </Pressable>
             )}
+            {canEnd && (
+              <Pressable
+                style={[styles.actionBtn, styles.navBtn]}
+                onPress={() =>
+                  router.push({
+                    pathname: "/(chauffeur)/voyages/navigation" as any,
+                    params: { voyage_id: id },
+                  })
+                }
+              >
+                <Text style={styles.actionBtnText}>🗺️  Navigation</Text>
+              </Pressable>
+            )}
             {canCancel && (
               <Pressable
                 style={[styles.actionBtn, { backgroundColor: colors.error }]}
@@ -1072,7 +1085,7 @@ const styles = StyleSheet.create({
     fontFamily: typography.fontFamily.bold,
     color: colors.textPrimary,
   },
-  actionsRow: { flexDirection: "row", gap: spacing.md },
+  actionsRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.md },
   actionBtn: {
     flex: 1,
     paddingVertical: spacing.md,
@@ -1085,6 +1098,10 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.sm,
     fontFamily: typography.fontFamily.semiBold,
     color: colors.white,
+  },
+  navBtn: {
+    backgroundColor: "#1a1a2e",
+    flexBasis: "100%",
   },
   passagersCard: {
     backgroundColor: colors.white,
