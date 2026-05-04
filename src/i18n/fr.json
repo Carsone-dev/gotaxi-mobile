@@ -1,0 +1,76 @@
+{
+  "common": {
+    "search": "Rechercher",
+    "cancel": "Annuler",
+    "confirm": "Confirmer",
+    "loading": "Chargement...",
+    "error": "Une erreur est survenue",
+    "retry": "Réessayer",
+    "back": "Retour",
+    "next": "Suivant",
+    "done": "Terminer",
+    "save": "Enregistrer",
+    "delete": "Supprimer",
+    "or": "OU"
+  },
+  "auth": {
+    "login": {
+      "title": "Bon retour 👋",
+      "subtitle": "Connectez-vous à votre compte",
+      "phone_label": "Téléphone",
+      "phone_placeholder": "+22997000000",
+      "password_label": "Mot de passe",
+      "password_placeholder": "••••••••",
+      "forgot": "Mot de passe oublié ?",
+      "submit": "Se connecter",
+      "no_account": "Pas de compte ?",
+      "sign_up": "S'inscrire",
+      "invalid_credentials": "Téléphone ou mot de passe incorrect",
+      "account_suspended": "Votre compte est suspendu"
+    },
+    "register": {
+      "title": "Créer un compte",
+      "subtitle": "Rejoignez GoTaxi",
+      "nom_label": "Nom",
+      "prenom_label": "Prénom",
+      "phone_label": "Téléphone",
+      "email_label": "Email (optionnel)",
+      "password_label": "Mot de passe",
+      "submit": "S'inscrire",
+      "has_account": "Déjà un compte ?",
+      "sign_in": "Se connecter",
+      "phone_exists": "Ce numéro est déjà enregistré",
+      "success": "Compte créé ! Vérifiez votre téléphone."
+    },
+    "otp": {
+      "title": "Vérification",
+      "subtitle": "Entrez le code envoyé au {{phone}}",
+      "resend": "Renvoyer le code",
+      "resend_in": "Renvoyer dans {{seconds}}s",
+      "invalid": "Code invalide ou expiré",
+      "max_attempts": "Trop de tentatives. Réessayez dans 30 min."
+    },
+    "forgot_password": {
+      "title": "Mot de passe oublié",
+      "subtitle": "Entrez votre numéro pour recevoir un code",
+      "submit": "Envoyer le code"
+    },
+    "reset_password": {
+      "title": "Nouveau mot de passe",
+      "code_label": "Code reçu par SMS",
+      "new_password_label": "Nouveau mot de passe",
+      "submit": "Réinitialiser",
+      "success": "Mot de passe modifié avec succès"
+    }
+  },
+  "onboarding": {
+    "slide1_title": "Voyagez entre villes en 2 clics",
+    "slide1_desc": "Trouvez des chauffeurs fiables pour vos trajets interurbains",
+    "slide2_title": "Envoyez vos colis en toute sécurité",
+    "slide2_desc": "Confiez vos envois à des chauffeurs vérifiés",
+    "slide3_title": "Payez avec Mobile Money",
+    "slide3_desc": "MTN, Moov, Orange — paiement simple et sécurisé",
+    "skip": "Passer",
+    "start": "Commencer"
+  }
+}

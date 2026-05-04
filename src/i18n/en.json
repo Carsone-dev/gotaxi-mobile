@@ -1,0 +1,76 @@
+{
+  "common": {
+    "search": "Search",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "loading": "Loading...",
+    "error": "An error occurred",
+    "retry": "Retry",
+    "back": "Back",
+    "next": "Next",
+    "done": "Done",
+    "save": "Save",
+    "delete": "Delete",
+    "or": "OR"
+  },
+  "auth": {
+    "login": {
+      "title": "Welcome back 👋",
+      "subtitle": "Sign in to your account",
+      "phone_label": "Phone",
+      "phone_placeholder": "+22997000000",
+      "password_label": "Password",
+      "password_placeholder": "••••••••",
+      "forgot": "Forgot password?",
+      "submit": "Sign in",
+      "no_account": "No account?",
+      "sign_up": "Sign up",
+      "invalid_credentials": "Invalid phone or password",
+      "account_suspended": "Your account is suspended"
+    },
+    "register": {
+      "title": "Create account",
+      "subtitle": "Join GoTaxi",
+      "nom_label": "Last name",
+      "prenom_label": "First name",
+      "phone_label": "Phone",
+      "email_label": "Email (optional)",
+      "password_label": "Password",
+      "submit": "Sign up",
+      "has_account": "Already have an account?",
+      "sign_in": "Sign in",
+      "phone_exists": "This number is already registered",
+      "success": "Account created! Check your phone."
+    },
+    "otp": {
+      "title": "Verification",
+      "subtitle": "Enter the code sent to {{phone}}",
+      "resend": "Resend code",
+      "resend_in": "Resend in {{seconds}}s",
+      "invalid": "Invalid or expired code",
+      "max_attempts": "Too many attempts. Try again in 30 min."
+    },
+    "forgot_password": {
+      "title": "Forgot password",
+      "subtitle": "Enter your number to receive a code",
+      "submit": "Send code"
+    },
+    "reset_password": {
+      "title": "New password",
+      "code_label": "Code received by SMS",
+      "new_password_label": "New password",
+      "submit": "Reset",
+      "success": "Password changed successfully"
+    }
+  },
+  "onboarding": {
+    "slide1_title": "Travel between cities in 2 clicks",
+    "slide1_desc": "Find reliable drivers for your intercity trips",
+    "slide2_title": "Send your packages safely",
+    "slide2_desc": "Entrust your shipments to verified drivers",
+    "slide3_title": "Pay with Mobile Money",
+    "slide3_desc": "MTN, Moov, Orange — simple and secure payment",
+    "skip": "Skip",
+    "start": "Get started"
+  }
+}
