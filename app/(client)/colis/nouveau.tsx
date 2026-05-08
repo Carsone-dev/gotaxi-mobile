@@ -1,9 +1,8 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   Pressable,
   Switch,
   Modal,
@@ -11,290 +10,53 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
-  Animated,
 } from "react-native";
+import Animated, {
+  FadeInRight,
+  FadeOutLeft,
+  FadeInLeft,
+  FadeOutRight,
+  FadeIn,
+} from "react-native-reanimated";
 import { router } from "expo-router";
-import { Button } from "@/src/components/ui/Button";
-import { Input } from "@/src/components/ui/Input";
 import { colors, typography, spacing, radii, shadows } from "@/src/theme";
 import { VILLES_LIST } from "@/src/constants/cities";
 import type { ColisCategorie, ColisModalitePaiement } from "@/src/api/types";
 
-// ─── Données ──────────────────────────────────────────────────────────────────
-
-const CATEGORIES: { key: ColisCategorie; label: string; icon: string; desc: string }[] = [
-  { key: "DOCUMENTS",    label: "Documents",    icon: "📄", desc: "Papiers, courriers" },
-  { key: "VETEMENTS",    label: "Vêtements",    icon: "👕", desc: "Habits, textiles" },
-  { key: "ELECTRONIQUE", label: "Électronique", icon: "📱", desc: "Appareils, câbles" },
-  { key: "ALIMENTAIRE",  label: "Alimentaire",  icon: "🍱", desc: "Produits alimentaires" },
-  { key: "FRAGILE",      label: "Fragile",      icon: "🔮", desc: "Manipulation délicate" },
-  { key: "AUTRE",        label: "Autre",        icon: "📦", desc: "Divers" },
+// ── Données ───────────────────────────────────────────────────────────────────
+const CATEGORIES: { key: ColisCategorie; label: string; icon: string }[] = [
+  { key: "DOCUMENTS",    label: "Documents",    icon: "📄" },
+  { key: "VETEMENTS",    label: "Vêtements",    icon: "👕" },
+  { key: "ELECTRONIQUE", label: "Électronique", icon: "📱" },
+  { key: "ALIMENTAIRE",  label: "Alimentaire",  icon: "🍱" },
+  { key: "FRAGILE",      label: "Fragile",      icon: "🔮" },
+  { key: "AUTRE",        label: "Autre",        icon: "📦" },
 ];
 
-const STEPS = [
-  { id: 1, title: "Trajet",       icon: "🗺️" },
-  { id: 2, title: "Contenu",      icon: "📦" },
-  { id: 3, title: "Destinataire", icon: "👤" },
-];
+const STEP_LABELS = ["Trajet", "Contenu", "Destinataire"];
 
-// ─── Modal picker de ville ────────────────────────────────────────────────────
-
-function CityPickerModal({
-  visible,
-  onClose,
-  onSelect,
-  exclude,
-  selected,
-}: {
-  visible: boolean;
-  onClose: () => void;
-  onSelect: (v: string) => void;
-  exclude?: string;
-  selected: string;
-}) {
-  const [search, setSearch] = useState("");
-  const villes = VILLES_LIST.filter(
-    (v) => v !== exclude && v.toLowerCase().includes(search.toLowerCase())
-  );
-
-  return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <Pressable style={modalStyles.backdrop} onPress={onClose} />
-      <View style={modalStyles.sheet}>
-        <View style={modalStyles.handle} />
-        <Text style={modalStyles.title}>Choisir une ville</Text>
-
-        <View style={modalStyles.searchBox}>
-          <Text style={modalStyles.searchIcon}>🔍</Text>
-          <TextInput
-            style={modalStyles.searchInput}
-            placeholder="Rechercher..."
-            placeholderTextColor={colors.textMuted}
-            value={search}
-            onChangeText={setSearch}
-            autoFocus
-          />
-        </View>
-
-        <FlatList
-          data={villes}
-          keyExtractor={(item) => item}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          renderItem={({ item }) => {
-            const isSelected = item === selected;
-            return (
-              <Pressable
-                style={[modalStyles.item, isSelected && modalStyles.itemSelected]}
-                onPress={() => { onSelect(item); setSearch(""); onClose(); }}
-              >
-                <Text style={modalStyles.itemDot}>
-                  {isSelected ? "✓" : "📍"}
-                </Text>
-                <Text style={[modalStyles.itemText, isSelected && modalStyles.itemTextSelected]}>
-                  {item}
-                </Text>
-              </Pressable>
-            );
-          }}
-          ListEmptyComponent={
-            <Text style={modalStyles.empty}>Aucune ville trouvée</Text>
-          }
-        />
-      </View>
-    </Modal>
-  );
-}
-
-const modalStyles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.4)",
-  },
-  sheet: {
-    backgroundColor: colors.white,
-    borderTopLeftRadius: radii["2xl"],
-    borderTopRightRadius: radii["2xl"],
-    paddingBottom: 40,
-    maxHeight: "75%",
-  },
-  handle: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.border,
-    alignSelf: "center",
-    marginVertical: spacing.md,
-  },
-  title: {
-    fontSize: typography.fontSize.lg,
-    fontFamily: typography.fontFamily.bold,
-    color: colors.textPrimary,
-    textAlign: "center",
-    marginBottom: spacing.md,
-  },
-  searchBox: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: colors.surface,
-    borderRadius: radii.lg,
-    marginHorizontal: spacing["2xl"],
-    marginBottom: spacing.md,
-    paddingHorizontal: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  searchIcon: { fontSize: 16, marginRight: spacing.sm },
-  searchInput: {
-    flex: 1,
-    paddingVertical: spacing.md,
-    fontSize: typography.fontSize.base,
-    fontFamily: typography.fontFamily.regular,
-    color: colors.textPrimary,
-  },
-  item: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
-    paddingHorizontal: spacing["2xl"],
-    paddingVertical: spacing.lg,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  itemSelected: { backgroundColor: `${colors.primary}08` },
-  itemDot: { fontSize: 16, width: 22, textAlign: "center" },
-  itemText: {
-    fontSize: typography.fontSize.base,
-    fontFamily: typography.fontFamily.regular,
-    color: colors.textPrimary,
-  },
-  itemTextSelected: {
-    fontFamily: typography.fontFamily.semiBold,
-    color: colors.primary,
-  },
-  empty: {
-    textAlign: "center",
-    padding: spacing["2xl"],
-    fontSize: typography.fontSize.base,
-    fontFamily: typography.fontFamily.regular,
-    color: colors.textMuted,
-  },
-});
-
-// ─── Bouton de ville ──────────────────────────────────────────────────────────
-
-function CityButton({
-  label,
-  value,
-  onPress,
-  error,
-}: {
-  label: string;
-  value: string;
-  onPress: () => void;
-  error?: string;
-}) {
-  return (
-    <View style={cityBtnStyles.wrapper}>
-      <Text style={cityBtnStyles.label}>{label}</Text>
-      <Pressable
-        style={[cityBtnStyles.btn, error ? cityBtnStyles.btnError : value && cityBtnStyles.btnFilled]}
-        onPress={onPress}
-      >
-        {value ? (
-          <View style={cityBtnStyles.valueRow}>
-            <Text style={cityBtnStyles.dot}>📍</Text>
-            <Text style={cityBtnStyles.value}>{value}</Text>
-          </View>
-        ) : (
-          <Text style={cityBtnStyles.placeholder}>Appuyer pour choisir</Text>
-        )}
-        <Text style={cityBtnStyles.chevron}>▼</Text>
-      </Pressable>
-      {error ? <Text style={cityBtnStyles.error}>{error}</Text> : null}
-    </View>
-  );
-}
-
-const cityBtnStyles = StyleSheet.create({
-  wrapper: { gap: spacing.xs },
-  label: {
-    fontSize: typography.fontSize.xs,
-    fontFamily: typography.fontFamily.semiBold,
-    color: colors.textSecondary,
-    textTransform: "uppercase",
-    letterSpacing: 1,
-  },
-  btn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: colors.surface,
-    borderRadius: radii.lg,
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    minHeight: 56,
-    paddingHorizontal: spacing.lg,
-  },
-  btnFilled: {
-    borderColor: colors.primary,
-    backgroundColor: `${colors.primary}06`,
-  },
-  btnError: { borderColor: colors.error },
-  valueRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, flex: 1 },
-  dot: { fontSize: 18 },
-  value: {
-    fontSize: typography.fontSize.lg,
-    fontFamily: typography.fontFamily.semiBold,
-    color: colors.textPrimary,
-  },
-  placeholder: {
-    fontSize: typography.fontSize.base,
-    fontFamily: typography.fontFamily.regular,
-    color: colors.textMuted,
-    flex: 1,
-  },
-  chevron: { fontSize: 11, color: colors.textMuted },
-  error: {
-    fontSize: typography.fontSize.sm,
-    fontFamily: typography.fontFamily.regular,
-    color: colors.error,
-  },
-});
-
-// ─── Indicateur de progression ────────────────────────────────────────────────
-
+// ── Indicateur d'étapes ───────────────────────────────────────────────────────
 function StepIndicator({ current }: { current: number }) {
   return (
-    <View style={stepStyles.row}>
-      {STEPS.map((step, idx) => {
-        const done = step.id < current;
-        const active = step.id === current;
+    <View style={si.row}>
+      {STEP_LABELS.map((label, idx) => {
+        const id = idx + 1;
+        const done   = id < current;
+        const active = id === current;
         return (
-          <React.Fragment key={step.id}>
-            <View style={stepStyles.step}>
-              <View style={[
-                stepStyles.circle,
-                done && stepStyles.circleDone,
-                active && stepStyles.circleActive,
-              ]}>
+          <React.Fragment key={id}>
+            <View style={si.step}>
+              <View style={[si.circle, done && si.circleDone, active && si.circleActive]}>
                 {done
-                  ? <Text style={stepStyles.checkText}>✓</Text>
-                  : <Text style={[stepStyles.circleText, active && stepStyles.circleTextActive]}>
-                      {step.id}
-                    </Text>
-                }
+                  ? <Text style={si.circleText}>✓</Text>
+                  : <Text style={[si.circleText, !active && si.circleTextIdle]}>{id}</Text>}
               </View>
-              <Text style={[
-                stepStyles.label,
-                active && stepStyles.labelActive,
-                done && stepStyles.labelDone,
-              ]}>
-                {step.title}
+              <Text style={[si.label, active && si.labelActive, done && si.labelDone]}>
+                {label}
               </Text>
             </View>
-            {idx < STEPS.length - 1 && (
-              <View style={[stepStyles.line, done && stepStyles.lineDone]} />
+            {idx < STEP_LABELS.length - 1 && (
+              <View style={[si.line, done && si.lineDone]} />
             )}
           </React.Fragment>
         );
@@ -302,77 +64,210 @@ function StepIndicator({ current }: { current: number }) {
     </View>
   );
 }
-
-const stepStyles = StyleSheet.create({
-  row: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    paddingHorizontal: spacing["2xl"],
-    paddingVertical: spacing.xl,
-  },
-  step: { alignItems: "center", gap: spacing.xs, width: 64 },
+const si = StyleSheet.create({
+  row: { flexDirection: "row", alignItems: "flex-start", paddingHorizontal: spacing["2xl"], paddingVertical: spacing.lg },
+  step: { alignItems: "center", gap: 4, width: 72 },
   circle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    borderWidth: 2,
-    borderColor: colors.border,
+    width: 32, height: 32, borderRadius: 16,
+    borderWidth: 2, borderColor: colors.border,
     backgroundColor: colors.surface,
-    alignItems: "center",
-    justifyContent: "center",
+    alignItems: "center", justifyContent: "center",
   },
-  circleDone: { backgroundColor: colors.primary, borderColor: colors.primary },
+  circleDone:   { backgroundColor: colors.primary, borderColor: colors.primary },
   circleActive: { borderColor: colors.primary, backgroundColor: colors.white },
-  circleText: {
-    fontSize: typography.fontSize.sm,
-    fontFamily: typography.fontFamily.bold,
-    color: colors.textMuted,
-  },
-  circleTextActive: { color: colors.primary },
-  checkText: {
-    fontSize: typography.fontSize.sm,
-    fontFamily: typography.fontFamily.bold,
-    color: colors.white,
-  },
-  line: { flex: 1, height: 2, backgroundColor: colors.border, marginTop: 15, marginHorizontal: 4 },
+  circleText:   { fontSize: typography.fontSize.sm, fontFamily: typography.fontFamily.bold, color: colors.white },
+  circleTextIdle: { color: colors.textMuted },
+  line:     { flex: 1, height: 2, backgroundColor: colors.border, marginTop: 15, marginHorizontal: 4 },
   lineDone: { backgroundColor: colors.primary },
-  label: {
-    fontSize: 10,
-    fontFamily: typography.fontFamily.medium,
-    color: colors.textMuted,
-    textAlign: "center",
-  },
-  labelActive: { color: colors.primary, fontFamily: typography.fontFamily.bold },
-  labelDone: { color: colors.primary },
+  label:      { fontSize: 10, fontFamily: typography.fontFamily.medium, color: colors.textMuted, textAlign: "center" },
+  labelActive:{ color: colors.primary, fontFamily: typography.fontFamily.bold },
+  labelDone:  { color: `${colors.primary}99` },
 });
 
-// ─── Écran principal ──────────────────────────────────────────────────────────
+// ── Modal sélecteur de ville ───────────────────────────────────────────────────
+function CityPickerModal({
+  visible,
+  title,
+  selected,
+  exclude,
+  onSelect,
+  onClose,
+}: {
+  visible: boolean;
+  title: string;
+  selected: string;
+  exclude?: string;
+  onSelect: (v: string) => void;
+  onClose: () => void;
+}) {
+  const [query, setQuery] = useState("");
+  useEffect(() => { if (!visible) setQuery(""); }, [visible]);
 
+  const all = VILLES_LIST.filter((v) => v !== exclude);
+  const cities = query.trim()
+    ? all.filter((v) => v.toLowerCase().includes(query.toLowerCase()))
+    : all;
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={ms.overlay}>
+        <Pressable style={StyleSheet.absoluteFillObject} onPress={onClose} />
+        <View style={ms.sheet}>
+          <View style={ms.handle} />
+          <View style={ms.header}>
+            <Text style={ms.title}>{title}</Text>
+            <Pressable style={ms.closeBtn} onPress={onClose} hitSlop={12}>
+              <Text style={ms.closeBtnText}>✕</Text>
+            </Pressable>
+          </View>
+          <View style={ms.searchRow}>
+            <Text style={ms.searchIcon}>🔍</Text>
+            <TextInput
+              style={ms.searchInput}
+              value={query}
+              onChangeText={setQuery}
+              placeholder="Rechercher une ville…"
+              placeholderTextColor={colors.textMuted}
+              returnKeyType="search"
+            />
+            {query.length > 0 && (
+              <Pressable onPress={() => setQuery("")} hitSlop={8}>
+                <Text style={ms.searchClear}>✕</Text>
+              </Pressable>
+            )}
+          </View>
+          <FlatList
+            data={cities}
+            keyExtractor={(v) => v}
+            style={{ maxHeight: 340 }}
+            keyboardShouldPersistTaps="handled"
+            ListEmptyComponent={
+              <View style={ms.empty}><Text style={ms.emptyText}>Aucune ville trouvée</Text></View>
+            }
+            renderItem={({ item }) => {
+              const isSelected = item === selected;
+              return (
+                <Pressable
+                  style={({ pressed }) => [ms.item, isSelected && ms.itemSelected, pressed && ms.itemPressed]}
+                  onPress={() => { onSelect(item); onClose(); }}
+                >
+                  <Text style={ms.itemPin}>{isSelected ? "✓" : "📍"}</Text>
+                  <Text style={[ms.itemText, isSelected && ms.itemTextSelected]}>{item}</Text>
+                  <Text style={ms.itemChevron}>›</Text>
+                </Pressable>
+              );
+            }}
+          />
+        </View>
+      </View>
+    </Modal>
+  );
+}
+const PB = Platform.OS === "ios" ? 36 : 24;
+const ms = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
+  sheet: {
+    backgroundColor: colors.white,
+    borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    paddingBottom: PB,
+    ...shadows.md,
+  },
+  handle: {
+    width: 44, height: 4, borderRadius: 2,
+    backgroundColor: colors.border,
+    alignSelf: "center", marginTop: 12, marginBottom: 8,
+  },
+  header: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingHorizontal: spacing["2xl"], paddingVertical: spacing.lg,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
+  },
+  title: { fontSize: typography.fontSize.xl, fontFamily: typography.fontFamily.bold, color: colors.textPrimary },
+  closeBtn: {
+    width: 32, height: 32, borderRadius: 16,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
+    alignItems: "center", justifyContent: "center",
+  },
+  closeBtnText: { fontSize: typography.fontSize.sm, fontFamily: typography.fontFamily.bold, color: colors.textSecondary },
+  searchRow: {
+    flexDirection: "row", alignItems: "center", gap: spacing.sm,
+    marginHorizontal: spacing["2xl"], marginVertical: spacing.md,
+    backgroundColor: colors.surface, borderRadius: radii.xl,
+    borderWidth: 1, borderColor: colors.border,
+    paddingHorizontal: spacing.lg, paddingVertical: spacing.sm,
+  },
+  searchIcon: { fontSize: 15 },
+  searchInput: { flex: 1, fontSize: typography.fontSize.base, fontFamily: typography.fontFamily.regular, color: colors.textPrimary, paddingVertical: spacing.xs },
+  searchClear: { fontSize: typography.fontSize.sm, color: colors.textMuted, fontFamily: typography.fontFamily.bold, paddingHorizontal: spacing.xs },
+  empty: { padding: spacing["2xl"], alignItems: "center" },
+  emptyText: { fontSize: typography.fontSize.base, fontFamily: typography.fontFamily.regular, color: colors.textMuted },
+  item: {
+    flexDirection: "row", alignItems: "center", gap: spacing.md,
+    paddingHorizontal: spacing["2xl"], paddingVertical: spacing.lg,
+    borderBottomWidth: 1, borderBottomColor: `${colors.border}60`,
+  },
+  itemSelected: { backgroundColor: `${colors.primary}08` },
+  itemPressed: { backgroundColor: `${colors.primary}08` },
+  itemPin: { fontSize: 16, width: 22, textAlign: "center" },
+  itemText: { flex: 1, fontSize: typography.fontSize.base, fontFamily: typography.fontFamily.medium, color: colors.textPrimary },
+  itemTextSelected: { color: colors.primary, fontFamily: typography.fontFamily.semiBold },
+  itemChevron: { fontSize: 22, color: colors.textMuted },
+});
+
+// ── Bouton ville ──────────────────────────────────────────────────────────────
+function CityBtn({
+  icon,
+  value,
+  placeholder,
+  error,
+  onPress,
+}: {
+  icon: string;
+  value: string;
+  placeholder: string;
+  error?: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      style={[styles.cityBtn, value && styles.cityBtnFilled, !!error && styles.cityBtnError]}
+      onPress={onPress}
+    >
+      <Text style={styles.cityBtnIcon}>{icon}</Text>
+      <Text style={[styles.cityBtnText, !value && styles.cityBtnPlaceholder]}>
+        {value || placeholder}
+      </Text>
+      <View style={styles.cityBtnChevronWrap}>
+        <Text style={styles.cityBtnChevron}>▼</Text>
+      </View>
+    </Pressable>
+  );
+}
+
+// ── Écran principal ───────────────────────────────────────────────────────────
 export default function NouveauColisScreen() {
   const [step, setStep] = useState(1);
+  const directionRef = useRef<"forward" | "backward">("forward");
 
-  // Step 1 — Trajet
-  const [villeDepart, setVilleDepart]   = useState("");
+  // Step 1
+  const [villeDepart,  setVilleDepart]  = useState("");
   const [villeArrivee, setVilleArrivee] = useState("");
   const [pickerTarget, setPickerTarget] = useState<"depart" | "arrivee" | null>(null);
 
-  // Step 2 — Contenu
-  const [description, setDescription]   = useState("");
-  const [categorie, setCategorie]       = useState<ColisCategorie>("AUTRE");
-  const [poids, setPoids]               = useState("");
-  const [fragile, setFragile]           = useState(false);
+  // Step 2
+  const [description, setDescription] = useState("");
+  const [categorie,   setCategorie]   = useState<ColisCategorie>("AUTRE");
+  const [poids,       setPoids]       = useState("");
+  const [fragile,     setFragile]     = useState(false);
 
-  // Step 3 — Destinataire + paiement
-  const [destNom, setDestNom]     = useState("");
-  const [destTel, setDestTel]     = useState("");
-  const [modalite, setModalite]   = useState<ColisModalitePaiement>("A_LA_LIVRAISON");
+  // Step 3
+  const [destNom,   setDestNom]   = useState("");
+  const [destTel,   setDestTel]   = useState("");
+  const [modalite,  setModalite]  = useState<ColisModalitePaiement>("A_LA_LIVRAISON");
 
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const scrollRef = useRef<ScrollView>(null);
 
-  const goTop = () => scrollRef.current?.scrollTo({ y: 0, animated: true });
-
-  const validateStep = (s: number): boolean => {
+  const validate = (s: number): boolean => {
     const e: Record<string, string> = {};
     if (s === 1) {
       if (!villeDepart)  e.villeDepart  = "Choisissez la ville de départ";
@@ -391,11 +286,16 @@ export default function NouveauColisScreen() {
     return Object.keys(e).length === 0;
   };
 
+  function goTo(s: number) {
+    directionRef.current = s > step ? "forward" : "backward";
+    setErrors({});
+    setStep(s);
+  }
+
   const next = () => {
-    if (!validateStep(step)) return;
+    if (!validate(step)) return;
     if (step < 3) {
-      setStep((s) => s + 1);
-      goTop();
+      goTo(step + 1);
     } else {
       router.push({
         pathname: "/(client)/colis/voyages" as any,
@@ -414,556 +314,628 @@ export default function NouveauColisScreen() {
     }
   };
 
-  const prev = () => {
-    setErrors({});
-    setStep((s) => s - 1);
-    goTop();
-  };
+  const catInfo = CATEGORIES.find((c) => c.key === categorie);
 
-  // ── Step 1 ──────────────────────────────────────────────────────────────────
-
-  const renderStep1 = () => (
-    <View style={styles.stepContent}>
-      <Text style={styles.stepTitle}>De quelle ville à quelle ville ?</Text>
-      <Text style={styles.stepSubtitle}>
-        Indiquez le trajet pour trouver un chauffeur disponible
-      </Text>
-
-      <View style={styles.routeVisual}>
-        <CityButton
-          label="Ville de départ"
-          value={villeDepart}
-          onPress={() => setPickerTarget("depart")}
-          error={errors.villeDepart}
-        />
-
-        <View style={styles.routeArrowRow}>
-          <View style={styles.routeArrowLine} />
-          <View style={styles.routeArrowCircle}>
-            <Text style={styles.routeArrowText}>↓</Text>
-          </View>
-          <View style={styles.routeArrowLine} />
-        </View>
-
-        <CityButton
-          label="Ville d'arrivée"
-          value={villeArrivee}
-          onPress={() => setPickerTarget("arrivee")}
-          error={errors.villeArrivee}
-        />
-      </View>
-
-      {villeDepart && villeArrivee && (
-        <View style={styles.routeSummary}>
-          <Text style={styles.routeSummaryText}>
-            📦 {villeDepart} → {villeArrivee}
-          </Text>
-        </View>
-      )}
-
-      <View style={styles.noteBox}>
-        <Text style={styles.noteText}>
-          ℹ️ Nous chercherons les chauffeurs disponibles sur ce trajet qui acceptent les colis.
-        </Text>
-      </View>
-    </View>
-  );
-
-  // ── Step 2 ──────────────────────────────────────────────────────────────────
-
-  const renderStep2 = () => (
-    <View style={styles.stepContent}>
-      <Text style={styles.stepTitle}>Que contient votre colis ?</Text>
-      <Text style={styles.stepSubtitle}>Ces informations aident le chauffeur à préparer le transport</Text>
-
-      <Input
-        label="Description du contenu"
-        placeholder="Ex : Vêtements pour ma sœur, médicaments…"
-        value={description}
-        onChangeText={setDescription}
-        error={errors.description}
-        multiline
-        numberOfLines={3}
-        style={{ minHeight: 72, textAlignVertical: "top" }}
-      />
-
-      <View style={styles.fieldGroup}>
-        <Text style={styles.fieldLabel}>Catégorie</Text>
-        <View style={styles.catGrid}>
-          {CATEGORIES.map((cat) => {
-            const active = categorie === cat.key;
-            return (
-              <Pressable
-                key={cat.key}
-                style={[styles.catCard, active && styles.catCardActive]}
-                onPress={() => setCategorie(cat.key)}
-              >
-                <Text style={styles.catIcon}>{cat.icon}</Text>
-                <Text style={[styles.catLabel, active && styles.catLabelActive]}>
-                  {cat.label}
-                </Text>
-                <Text style={styles.catDesc}>{cat.desc}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      </View>
-
-      <Input
-        label="Poids estimé (kg) — optionnel"
-        placeholder="Ex : 2.5"
-        value={poids}
-        onChangeText={setPoids}
-        keyboardType="decimal-pad"
-      />
-
-      <Pressable
-        style={[styles.fragileToggle, fragile && styles.fragileToggleActive]}
-        onPress={() => setFragile((f) => !f)}
-      >
-        <View style={styles.fragileLeft}>
-          <Text style={styles.fragileIcon}>🔮</Text>
-          <View>
-            <Text style={[styles.fragileTitle, fragile && styles.fragileTitleActive]}>
-              Colis fragile
-            </Text>
-            <Text style={styles.fragileHint}>Manipulation avec précaution requise</Text>
-          </View>
-        </View>
-        <Switch
-          value={fragile}
-          onValueChange={setFragile}
-          trackColor={{ true: colors.primary, false: colors.border }}
-          thumbColor={colors.white}
-        />
-      </Pressable>
-    </View>
-  );
-
-  // ── Step 3 ──────────────────────────────────────────────────────────────────
-
-  const renderStep3 = () => (
-    <View style={styles.stepContent}>
-      <Text style={styles.stepTitle}>Qui reçoit le colis ?</Text>
-      <Text style={styles.stepSubtitle}>
-        Le chauffeur contactera le destinataire à la livraison
-      </Text>
-
-      <Input
-        label="Nom complet du destinataire"
-        placeholder="Prénom et nom"
-        value={destNom}
-        onChangeText={setDestNom}
-        error={errors.destNom}
-        autoCapitalize="words"
-      />
-
-      <Input
-        label="Numéro de téléphone"
-        placeholder="+229 97 00 00 00"
-        value={destTel}
-        onChangeText={setDestTel}
-        error={errors.destTel}
-        keyboardType="phone-pad"
-      />
-
-      {/* Modalité de paiement */}
-      <View style={styles.fieldGroup}>
-        <Text style={styles.fieldLabel}>Quand souhaitez-vous payer ?</Text>
-        <View style={styles.modaliteRow}>
-          <Pressable
-            style={[styles.modaliteBtn, modalite === "A_LA_LIVRAISON" && styles.modaliteBtnActive]}
-            onPress={() => setModalite("A_LA_LIVRAISON")}
-          >
-            <Text style={styles.modaliteBtnIcon}>📦</Text>
-            <Text style={[styles.modaliteBtnLabel, modalite === "A_LA_LIVRAISON" && styles.modaliteBtnLabelActive]}>
-              À la livraison
-            </Text>
-            <Text style={[styles.modaliteBtnHint, modalite === "A_LA_LIVRAISON" && styles.modaliteBtnHintActive]}>
-              Payer quand le colis arrive
-            </Text>
-          </Pressable>
-          <Pressable
-            style={[styles.modaliteBtn, modalite === "A_LA_CONFIRMATION" && styles.modaliteBtnActive]}
-            onPress={() => setModalite("A_LA_CONFIRMATION")}
-          >
-            <Text style={styles.modaliteBtnIcon}>✅</Text>
-            <Text style={[styles.modaliteBtnLabel, modalite === "A_LA_CONFIRMATION" && styles.modaliteBtnLabelActive]}>
-              À la confirmation
-            </Text>
-            <Text style={[styles.modaliteBtnHint, modalite === "A_LA_CONFIRMATION" && styles.modaliteBtnHintActive]}>
-              Payer quand le chauffeur accepte
-            </Text>
-          </Pressable>
-        </View>
-      </View>
-
-      {/* Résumé complet */}
-      <View style={styles.summaryCard}>
-        <Text style={styles.summaryTitle}>Récapitulatif</Text>
-
-        <View style={styles.summaryRow}>
-          <Text style={styles.summaryIcon}>🗺️</Text>
-          <Text style={styles.summaryText}>{villeDepart} → {villeArrivee}</Text>
-        </View>
-        <View style={styles.summaryRow}>
-          <Text style={styles.summaryIcon}>
-            {CATEGORIES.find((c) => c.key === categorie)?.icon}
-          </Text>
-          <Text style={styles.summaryText}>
-            {CATEGORIES.find((c) => c.key === categorie)?.label} · {description.substring(0, 40)}{description.length > 40 ? "…" : ""}
-          </Text>
-        </View>
-        {poids ? (
-          <View style={styles.summaryRow}>
-            <Text style={styles.summaryIcon}>⚖️</Text>
-            <Text style={styles.summaryText}>{poids} kg</Text>
-          </View>
-        ) : null}
-        {fragile && (
-          <View style={styles.summaryRow}>
-            <Text style={styles.summaryIcon}>⚠️</Text>
-            <Text style={[styles.summaryText, { color: colors.warningText }]}>Fragile</Text>
-          </View>
-        )}
-        <View style={styles.summaryRow}>
-          <Text style={styles.summaryIcon}>💳</Text>
-          <Text style={styles.summaryText}>
-            {modalite === "A_LA_LIVRAISON" ? "Paiement à la livraison" : "Paiement à la confirmation"}
-          </Text>
-        </View>
-      </View>
-
-      <View style={styles.noteBox}>
-        <Text style={styles.noteText}>
-          💰 Le prix est calculé automatiquement par le serveur selon le trajet, la catégorie et le poids. Vous le verrez après confirmation.
-        </Text>
-      </View>
-    </View>
-  );
-
-  // ── Rendu ────────────────────────────────────────────────────────────────────
+  const entering = directionRef.current === "forward"
+    ? FadeInRight.duration(260)
+    : FadeInLeft.duration(260);
+  const exiting = directionRef.current === "forward"
+    ? FadeOutLeft.duration(260)
+    : FadeOutRight.duration(260);
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1 }}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-    >
-      <View style={styles.container}>
-        {/* Header fixe */}
-        <View style={styles.header}>
-          {step > 1 ? (
-            <Pressable onPress={prev} style={styles.headerBack}>
-              <Text style={styles.headerBackText}>←</Text>
-            </Pressable>
-          ) : (
-            <Pressable onPress={() => router.back()} style={styles.headerBack}>
-              <Text style={styles.headerBackText}>←</Text>
-            </Pressable>
-          )}
-          <View style={{ flex: 1 }}>
-            <Text style={styles.headerTitle}>Envoyer un colis</Text>
-          </View>
-        </View>
+    <View style={styles.root}>
+      <View style={styles.stepContainer}>
+        <Animated.View key={step} entering={entering} exiting={exiting} style={StyleSheet.absoluteFillObject}>
+          <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
 
-        {/* Indicateur étapes */}
-        <View style={styles.stepperWrapper}>
-          <StepIndicator current={step} />
-        </View>
+            {/* ── Header ── */}
+            <View style={styles.header}>
+              <Pressable
+                onPress={() => step > 1 ? goTo(step - 1) : router.back()}
+                style={styles.backBtn}
+                hitSlop={8}
+              >
+                <Text style={styles.backBtnText}>←</Text>
+              </Pressable>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.headerTitle}>Envoyer un colis</Text>
+              </View>
+            </View>
 
-        {/* Contenu scrollable */}
-        <ScrollView
-          ref={scrollRef}
-          style={styles.scroll}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
-          {step === 1 && renderStep1()}
-          {step === 2 && renderStep2()}
-          {step === 3 && renderStep3()}
-        </ScrollView>
+            {/* ── Stepper ── */}
+            <View style={styles.stepperWrap}>
+              <StepIndicator current={step} />
+            </View>
 
-        {/* Footer fixe */}
-        <View style={styles.footer}>
-          <Button size="lg" onPress={next} style={styles.nextBtn}>
-            {step === 3 ? "Trouver un chauffeur →" : `Continuer · Étape ${step}/3`}
-          </Button>
-        </View>
+            {/* ════ Étape 1 : Trajet ════ */}
+            {step === 1 && (
+              <>
+                <View style={styles.body}>
+                  <View style={styles.stepTitleBlock}>
+                    <Text style={styles.stepTitle}>De quelle ville à quelle ville ?</Text>
+                    <Text style={styles.stepSub}>Choisissez le trajet de votre colis</Text>
+                  </View>
 
-        {/* Modal picker ville */}
-        <CityPickerModal
-          visible={pickerTarget !== null}
-          selected={pickerTarget === "depart" ? villeDepart : villeArrivee}
-          exclude={pickerTarget === "depart" ? villeArrivee : villeDepart}
-          onClose={() => setPickerTarget(null)}
-          onSelect={(v) => {
-            if (pickerTarget === "depart") setVilleDepart(v);
-            else setVilleArrivee(v);
-          }}
-        />
+                  {/* Route card */}
+                  <View style={styles.routeCard}>
+                    {/* Départ */}
+                    <View style={styles.routeRow}>
+                      <View style={styles.routeDotDepart} />
+                      <View style={styles.routeField}>
+                        <Text style={styles.routeFieldLabel}>Départ</Text>
+                        <CityBtn
+                          icon="🏙"
+                          value={villeDepart}
+                          placeholder="Choisir la ville de départ"
+                          error={errors.villeDepart}
+                          onPress={() => setPickerTarget("depart")}
+                        />
+                        {errors.villeDepart ? (
+                          <Text style={styles.fieldError}>{errors.villeDepart}</Text>
+                        ) : null}
+                      </View>
+                    </View>
+
+                    {/* Arrow */}
+                    <View style={styles.routeDivider}>
+                      <View style={styles.routeDividerLine} />
+                      <View style={styles.routeDividerCircle}>
+                        <Text style={styles.routeDividerArrow}>↓</Text>
+                      </View>
+                      <View style={styles.routeDividerLine} />
+                    </View>
+
+                    {/* Arrivée */}
+                    <View style={styles.routeRow}>
+                      <View style={styles.routeDotArrivee} />
+                      <View style={styles.routeField}>
+                        <Text style={styles.routeFieldLabel}>Arrivée</Text>
+                        <CityBtn
+                          icon="🎯"
+                          value={villeArrivee}
+                          placeholder="Choisir la ville d'arrivée"
+                          error={errors.villeArrivee}
+                          onPress={() => setPickerTarget("arrivee")}
+                        />
+                        {errors.villeArrivee ? (
+                          <Text style={styles.fieldError}>{errors.villeArrivee}</Text>
+                        ) : null}
+                      </View>
+                    </View>
+                  </View>
+
+                  {/* Route preview */}
+                  {villeDepart && villeArrivee && (
+                    <Animated.View entering={FadeIn.duration(200)} style={styles.routePreview}>
+                      <Text style={styles.routePreviewIcon}>📦</Text>
+                      <Text style={styles.routePreviewText}>
+                        {villeDepart} → {villeArrivee}
+                      </Text>
+                    </Animated.View>
+                  )}
+
+                  <View style={styles.infoChip}>
+                    <Text style={styles.infoChipIcon}>ℹ️</Text>
+                    <Text style={styles.infoChipText}>
+                      Nous chercherons les chauffeurs sur ce trajet qui acceptent les colis.
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.ctaArea}>
+                  <Pressable
+                    style={[styles.ctaBtn, (!villeDepart || !villeArrivee) && styles.ctaBtnOff]}
+                    onPress={next}
+                    disabled={!villeDepart || !villeArrivee}
+                  >
+                    <Text style={styles.ctaBtnText}>Décrire le colis</Text>
+                    <Text style={styles.ctaBtnArrow}>→</Text>
+                  </Pressable>
+                </View>
+              </>
+            )}
+
+            {/* ════ Étape 2 : Contenu ════ */}
+            {step === 2 && (
+              <>
+                <View style={styles.body}>
+                  <View style={styles.stepTitleBlock}>
+                    <Text style={styles.stepTitle}>Que contient votre colis ?</Text>
+                    <Text style={styles.stepSub}>Ces infos aident le chauffeur à préparer le transport</Text>
+                  </View>
+
+                  {/* Description */}
+                  <View style={styles.fieldBlock}>
+                    <Text style={styles.fieldLabel}>
+                      <Text style={styles.fieldLabelDot}>● </Text>Description du contenu
+                    </Text>
+                    <TextInput
+                      style={[styles.textInput, styles.textArea, !!errors.description && styles.textInputError]}
+                      value={description}
+                      onChangeText={(t) => { setDescription(t); if (errors.description) setErrors((e) => ({ ...e, description: "" })); }}
+                      placeholder="Ex : Vêtements pour ma sœur, médicaments, documents…"
+                      placeholderTextColor={colors.textMuted}
+                      multiline
+                      numberOfLines={2}
+                      textAlignVertical="top"
+                    />
+                    {errors.description ? (
+                      <Text style={styles.fieldError}>{errors.description}</Text>
+                    ) : null}
+                  </View>
+
+                  {/* Catégorie */}
+                  <View style={styles.fieldBlock}>
+                    <Text style={styles.fieldLabel}>
+                      <Text style={styles.fieldLabelDot}>● </Text>Catégorie
+                    </Text>
+                    <View style={styles.catGrid}>
+                      {CATEGORIES.map((cat) => {
+                        const active = categorie === cat.key;
+                        return (
+                          <Pressable
+                            key={cat.key}
+                            style={[styles.catCard, active && styles.catCardActive]}
+                            onPress={() => setCategorie(cat.key)}
+                          >
+                            {active && <View style={styles.catCheck}><Text style={styles.catCheckText}>✓</Text></View>}
+                            <Text style={styles.catIcon}>{cat.icon}</Text>
+                            <Text style={[styles.catLabel, active && styles.catLabelActive]}>
+                              {cat.label}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  </View>
+
+                  {/* Poids + Fragile */}
+                  <View style={styles.poidsFragileRow}>
+                    <View style={styles.poidsBlock}>
+                      <Text style={styles.fieldLabel}>
+                        <Text style={styles.fieldLabelDot}>● </Text>Poids (kg)
+                      </Text>
+                      <TextInput
+                        style={[styles.textInput, styles.poidsInput]}
+                        value={poids}
+                        onChangeText={setPoids}
+                        placeholder="Ex : 2.5"
+                        placeholderTextColor={colors.textMuted}
+                        keyboardType="decimal-pad"
+                        returnKeyType="done"
+                      />
+                      <Text style={styles.fieldHint}>Optionnel</Text>
+                    </View>
+
+                    <Pressable
+                      style={[styles.fragileCard, fragile && styles.fragileCardActive]}
+                      onPress={() => setFragile((f) => !f)}
+                    >
+                      <Text style={styles.fragileCardIcon}>🔮</Text>
+                      <Text style={[styles.fragileCardLabel, fragile && styles.fragileCardLabelActive]}>
+                        Fragile
+                      </Text>
+                      <Switch
+                        value={fragile}
+                        onValueChange={setFragile}
+                        trackColor={{ true: colors.warning, false: colors.border }}
+                        thumbColor={colors.white}
+                        style={{ transform: [{ scaleX: 0.85 }, { scaleY: 0.85 }] }}
+                      />
+                    </Pressable>
+                  </View>
+                </View>
+
+                <View style={styles.ctaArea}>
+                  <Pressable
+                    style={[styles.ctaBtn, !description.trim() && styles.ctaBtnOff]}
+                    onPress={next}
+                    disabled={!description.trim()}
+                  >
+                    <Text style={styles.ctaBtnText}>Infos du destinataire</Text>
+                    <Text style={styles.ctaBtnArrow}>→</Text>
+                  </Pressable>
+                </View>
+              </>
+            )}
+
+            {/* ════ Étape 3 : Destinataire ════ */}
+            {step === 3 && (
+              <>
+                <View style={styles.body}>
+                  <View style={styles.stepTitleBlock}>
+                    <Text style={styles.stepTitle}>Qui reçoit le colis ?</Text>
+                    <Text style={styles.stepSub}>Le chauffeur contactera le destinataire à la livraison</Text>
+                  </View>
+
+                  {/* Nom */}
+                  <View style={styles.fieldBlock}>
+                    <Text style={styles.fieldLabel}>
+                      <Text style={styles.fieldLabelDot}>● </Text>Nom du destinataire
+                    </Text>
+                    <TextInput
+                      style={[styles.textInput, !!errors.destNom && styles.textInputError]}
+                      value={destNom}
+                      onChangeText={(t) => { setDestNom(t); if (errors.destNom) setErrors((e) => ({ ...e, destNom: "" })); }}
+                      placeholder="Prénom et nom"
+                      placeholderTextColor={colors.textMuted}
+                      autoCapitalize="words"
+                      returnKeyType="next"
+                    />
+                    {errors.destNom ? <Text style={styles.fieldError}>{errors.destNom}</Text> : null}
+                  </View>
+
+                  {/* Téléphone */}
+                  <View style={styles.fieldBlock}>
+                    <Text style={styles.fieldLabel}>
+                      <Text style={styles.fieldLabelDot}>● </Text>Numéro de téléphone
+                    </Text>
+                    <TextInput
+                      style={[styles.textInput, !!errors.destTel && styles.textInputError]}
+                      value={destTel}
+                      onChangeText={(t) => { setDestTel(t); if (errors.destTel) setErrors((e) => ({ ...e, destTel: "" })); }}
+                      placeholder="+229 97 00 00 00"
+                      placeholderTextColor={colors.textMuted}
+                      keyboardType="phone-pad"
+                      returnKeyType="done"
+                    />
+                    {errors.destTel ? <Text style={styles.fieldError}>{errors.destTel}</Text> : null}
+                  </View>
+
+                  {/* Paiement */}
+                  <View style={styles.fieldBlock}>
+                    <Text style={styles.fieldLabel}>
+                      <Text style={styles.fieldLabelDot}>● </Text>Quand souhaitez-vous payer ?
+                    </Text>
+                    <View style={styles.payRow}>
+                      <Pressable
+                        style={[styles.payCard, modalite === "A_LA_LIVRAISON" && styles.payCardActive]}
+                        onPress={() => setModalite("A_LA_LIVRAISON")}
+                      >
+                        {modalite === "A_LA_LIVRAISON" && <View style={styles.payCheck}><Text style={styles.payCheckText}>✓</Text></View>}
+                        <Text style={styles.payCardIcon}>📦</Text>
+                        <Text style={[styles.payCardLabel, modalite === "A_LA_LIVRAISON" && styles.payCardLabelActive]}>
+                          À la livraison
+                        </Text>
+                        <Text style={styles.payCardHint}>Payer quand le colis arrive</Text>
+                      </Pressable>
+                      <Pressable
+                        style={[styles.payCard, modalite === "A_LA_CONFIRMATION" && styles.payCardActive]}
+                        onPress={() => setModalite("A_LA_CONFIRMATION")}
+                      >
+                        {modalite === "A_LA_CONFIRMATION" && <View style={styles.payCheck}><Text style={styles.payCheckText}>✓</Text></View>}
+                        <Text style={styles.payCardIcon}>✅</Text>
+                        <Text style={[styles.payCardLabel, modalite === "A_LA_CONFIRMATION" && styles.payCardLabelActive]}>
+                          À la confirmation
+                        </Text>
+                        <Text style={styles.payCardHint}>Payer quand le chauffeur accepte</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+
+                  {/* Mini recap */}
+                  <View style={styles.recap}>
+                    <Text style={styles.recapIcon}>📋</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.recapRoute}>{villeDepart} → {villeArrivee}</Text>
+                      <Text style={styles.recapDetail} numberOfLines={1}>
+                        {catInfo?.icon} {catInfo?.label}
+                        {poids ? `  ·  ${poids} kg` : ""}
+                        {fragile ? "  ·  ⚠️ Fragile" : ""}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+
+                <View style={styles.ctaArea}>
+                  <Pressable
+                    style={[styles.ctaBtn, (!destNom.trim() || !destTel.trim()) && styles.ctaBtnOff]}
+                    onPress={next}
+                    disabled={!destNom.trim() || !destTel.trim()}
+                  >
+                    <Text style={styles.ctaBtnText}>Trouver un chauffeur</Text>
+                    <Text style={styles.ctaBtnArrow}>→</Text>
+                  </Pressable>
+                </View>
+              </>
+            )}
+
+          </KeyboardAvoidingView>
+        </Animated.View>
       </View>
-    </KeyboardAvoidingView>
+
+      {/* City picker modals */}
+      <CityPickerModal
+        visible={pickerTarget !== null}
+        title={pickerTarget === "depart" ? "Ville de départ" : "Ville d'arrivée"}
+        selected={pickerTarget === "depart" ? villeDepart : villeArrivee}
+        exclude={pickerTarget === "depart" ? villeArrivee : villeDepart}
+        onClose={() => setPickerTarget(null)}
+        onSelect={(v) => {
+          if (pickerTarget === "depart") setVilleDepart(v);
+          else setVilleArrivee(v);
+        }}
+      />
+    </View>
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
+// ── Styles ────────────────────────────────────────────────────────────────────
+const PT = Platform.OS === "ios" ? 56 : 40;
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.surface },
+  root: { flex: 1, backgroundColor: colors.surface },
+  stepContainer: { flex: 1, overflow: "hidden" },
 
+  // Header
   header: {
     flexDirection: "row",
     alignItems: "center",
+    gap: spacing.md,
     paddingHorizontal: spacing["2xl"],
-    paddingTop: Platform.OS === "ios" ? 56 : 40,
+    paddingTop: PT,
     paddingBottom: spacing.md,
     backgroundColor: colors.white,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
-    gap: spacing.md,
+    ...shadows.sm,
   },
-  headerBack: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+  backBtn: {
+    width: 36, height: 36, borderRadius: 18,
     backgroundColor: colors.surface,
-    alignItems: "center",
-    justifyContent: "center",
+    borderWidth: 1, borderColor: colors.border,
+    alignItems: "center", justifyContent: "center",
   },
-  headerBackText: {
-    fontSize: typography.fontSize["2xl"],
-    color: colors.primary,
-    fontFamily: typography.fontFamily.bold,
-    lineHeight: 28,
-  },
-  headerTitle: {
-    fontSize: typography.fontSize.lg,
-    fontFamily: typography.fontFamily.bold,
-    color: colors.textPrimary,
-  },
+  backBtnText: { fontSize: 20, fontFamily: typography.fontFamily.bold, color: colors.primary, lineHeight: 24 },
+  headerTitle: { fontSize: typography.fontSize.lg, fontFamily: typography.fontFamily.bold, color: colors.textPrimary },
 
-  stepperWrapper: {
+  // Stepper
+  stepperWrap: {
     backgroundColor: colors.white,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
-    ...shadows.sm,
   },
 
-  scroll: { flex: 1 },
-  scrollContent: { padding: spacing["2xl"], paddingBottom: 40, gap: spacing.xl },
-
-  stepContent: { gap: spacing.xl },
-
-  stepTitle: {
-    fontSize: typography.fontSize["2xl"],
-    fontFamily: typography.fontFamily.bold,
-    color: colors.textPrimary,
+  // Body
+  body: {
+    flex: 1,
+    paddingHorizontal: spacing["2xl"],
+    paddingTop: spacing.xl,
+    gap: spacing.lg,
   },
-  stepSubtitle: {
-    fontSize: typography.fontSize.sm,
-    fontFamily: typography.fontFamily.regular,
-    color: colors.textMuted,
-    lineHeight: 20,
-    marginTop: -spacing.md,
-  },
+  stepTitleBlock: { gap: 3 },
+  stepTitle: { fontSize: typography.fontSize["2xl"], fontFamily: typography.fontFamily.bold, color: colors.textPrimary },
+  stepSub: { fontSize: typography.fontSize.sm, fontFamily: typography.fontFamily.regular, color: colors.textMuted, lineHeight: 18 },
 
-  // Route visual (step 1)
-  routeVisual: {
+  // Route card (step 1)
+  routeCard: {
     backgroundColor: colors.white,
     borderRadius: radii.xl,
-    padding: spacing["2xl"],
-    gap: spacing.md,
+    padding: spacing.xl,
+    gap: spacing.sm,
     ...shadows.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
-  routeArrowRow: {
+  routeRow: { flexDirection: "row", alignItems: "flex-start", gap: spacing.md },
+  routeDotDepart: {
+    width: 14, height: 14, borderRadius: 7,
+    backgroundColor: colors.primary,
+    marginTop: 32,
+    borderWidth: 3, borderColor: `${colors.primary}35`,
+  },
+  routeDotArrivee: {
+    width: 14, height: 14, borderRadius: 7,
+    backgroundColor: colors.black,
+    marginTop: 32,
+    borderWidth: 3, borderColor: `${colors.black}35`,
+  },
+  routeField: { flex: 1, gap: spacing.xs },
+  routeFieldLabel: {
+    fontSize: 10,
+    fontFamily: typography.fontFamily.semiBold,
+    color: colors.textMuted,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+  },
+  routeDivider: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: spacing.md,
+    paddingLeft: 5,
     gap: spacing.sm,
+    marginVertical: 2,
   },
-  routeArrowLine: { flex: 1, height: 1, backgroundColor: colors.border },
-  routeArrowCircle: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+  routeDividerLine: { flex: 1, height: 1, backgroundColor: colors.border },
+  routeDividerCircle: {
+    width: 28, height: 28, borderRadius: 14,
     backgroundColor: `${colors.primary}15`,
+    alignItems: "center", justifyContent: "center",
+  },
+  routeDividerArrow: { fontSize: 14, color: colors.primary, fontFamily: typography.fontFamily.bold },
+
+  // City button
+  cityBtn: {
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
+    gap: spacing.md,
+    backgroundColor: colors.surface,
+    borderRadius: radii.lg,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
   },
-  routeArrowText: {
-    fontSize: typography.fontSize.base,
-    color: colors.primary,
-    fontFamily: typography.fontFamily.bold,
+  cityBtnFilled: { borderColor: colors.primary, backgroundColor: `${colors.primary}06` },
+  cityBtnError: { borderColor: colors.error },
+  cityBtnIcon: { fontSize: 18 },
+  cityBtnText: { flex: 1, fontSize: typography.fontSize.base, fontFamily: typography.fontFamily.semiBold, color: colors.textPrimary },
+  cityBtnPlaceholder: { color: colors.textMuted, fontFamily: typography.fontFamily.regular, fontSize: typography.fontSize.sm },
+  cityBtnChevronWrap: {
+    width: 24, height: 24, borderRadius: 12,
+    backgroundColor: colors.white,
+    borderWidth: 1, borderColor: colors.border,
+    alignItems: "center", justifyContent: "center",
   },
-  routeSummary: {
+  cityBtnChevron: { fontSize: 9, color: colors.textMuted },
+
+  // Route preview chip
+  routePreview: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
     backgroundColor: `${colors.primary}10`,
     borderRadius: radii.lg,
-    padding: spacing.md,
-    alignItems: "center",
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderWidth: 1,
+    borderColor: `${colors.primary}25`,
   },
-  routeSummaryText: {
-    fontSize: typography.fontSize.base,
-    fontFamily: typography.fontFamily.semiBold,
-    color: colors.primary,
-  },
+  routePreviewIcon: { fontSize: 16 },
+  routePreviewText: { fontSize: typography.fontSize.sm, fontFamily: typography.fontFamily.semiBold, color: colors.primary },
 
-  // Categories (step 2)
-  fieldGroup: { gap: spacing.sm },
-  fieldLabel: {
-    fontSize: typography.fontSize.xs,
-    fontFamily: typography.fontFamily.semiBold,
-    color: colors.textSecondary,
-    textTransform: "uppercase",
-    letterSpacing: 1,
-  },
-  catGrid: {
+  // Info chip
+  infoChip: {
     flexDirection: "row",
-    flexWrap: "wrap",
     gap: spacing.sm,
+    backgroundColor: colors.infoBg,
+    borderRadius: radii.lg,
+    padding: spacing.md,
+    alignItems: "flex-start",
   },
+  infoChipIcon: { fontSize: 14 },
+  infoChipText: { flex: 1, fontSize: typography.fontSize.xs, fontFamily: typography.fontFamily.regular, color: colors.info, lineHeight: 18 },
+
+  // Fields
+  fieldBlock: { gap: spacing.xs },
+  fieldLabel: { fontSize: typography.fontSize.sm, fontFamily: typography.fontFamily.semiBold, color: colors.textSecondary },
+  fieldLabelDot: { color: colors.primary },
+  fieldHint: { fontSize: typography.fontSize.xs, fontFamily: typography.fontFamily.regular, color: colors.textMuted },
+  fieldError: { fontSize: typography.fontSize.xs, fontFamily: typography.fontFamily.medium, color: colors.error },
+  textInput: {
+    backgroundColor: colors.white,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    borderRadius: radii.xl,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    fontSize: typography.fontSize.base,
+    fontFamily: typography.fontFamily.regular,
+    color: colors.textPrimary,
+  },
+  textArea: { minHeight: 64, textAlignVertical: "top", paddingTop: spacing.md },
+  textInputError: { borderColor: colors.error },
+
+  // Category grid
+  catGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   catCard: {
     width: "30%",
     flexGrow: 1,
     backgroundColor: colors.white,
     borderRadius: radii.lg,
-    padding: spacing.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.sm,
     alignItems: "center",
-    gap: spacing.xs,
+    gap: 4,
     borderWidth: 1.5,
     borderColor: colors.border,
+    overflow: "hidden",
     ...shadows.sm,
   },
-  catCardActive: {
-    borderColor: colors.primary,
-    backgroundColor: `${colors.primary}08`,
+  catCardActive: { borderColor: colors.primary, backgroundColor: `${colors.primary}08` },
+  catCheck: {
+    position: "absolute",
+    top: 6, right: 6,
+    width: 16, height: 16, borderRadius: 8,
+    backgroundColor: colors.primary,
+    alignItems: "center", justifyContent: "center",
   },
-  catIcon: { fontSize: 24 },
-  catLabel: {
-    fontSize: typography.fontSize.xs,
-    fontFamily: typography.fontFamily.semiBold,
-    color: colors.textSecondary,
-    textAlign: "center",
-  },
+  catCheckText: { fontSize: 9, fontFamily: typography.fontFamily.bold, color: colors.white },
+  catIcon: { fontSize: 22 },
+  catLabel: { fontSize: 10, fontFamily: typography.fontFamily.semiBold, color: colors.textSecondary, textAlign: "center" },
   catLabelActive: { color: colors.primary },
-  catDesc: {
-    fontSize: 9,
-    fontFamily: typography.fontFamily.regular,
-    color: colors.textMuted,
-    textAlign: "center",
-  },
 
-  // Fragile toggle
-  fragileToggle: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: colors.white,
-    borderRadius: radii.xl,
-    padding: spacing.xl,
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    ...shadows.sm,
-  },
-  fragileToggleActive: {
-    borderColor: colors.warning,
-    backgroundColor: colors.warningBg,
-  },
-  fragileLeft: { flexDirection: "row", alignItems: "center", gap: spacing.md, flex: 1 },
-  fragileIcon: { fontSize: 24 },
-  fragileTitle: {
-    fontSize: typography.fontSize.base,
-    fontFamily: typography.fontFamily.semiBold,
-    color: colors.textPrimary,
-  },
-  fragileTitleActive: { color: colors.warningText },
-  fragileHint: {
-    fontSize: typography.fontSize.xs,
-    fontFamily: typography.fontFamily.regular,
-    color: colors.textMuted,
-  },
-
-  // Modalite selector (step 3)
-  modaliteRow: { flexDirection: "row", gap: spacing.sm },
-  modaliteBtn: {
+  // Poids + Fragile row
+  poidsFragileRow: { flexDirection: "row", gap: spacing.md, alignItems: "flex-start" },
+  poidsBlock: { flex: 1, gap: spacing.xs },
+  poidsInput: { paddingVertical: spacing.sm },
+  fragileCard: {
     flex: 1,
     backgroundColor: colors.white,
-    borderRadius: radii.lg,
+    borderRadius: radii.xl,
     borderWidth: 1.5,
     borderColor: colors.border,
     padding: spacing.md,
     alignItems: "center",
-    gap: spacing.xs,
+    gap: 4,
     ...shadows.sm,
   },
-  modaliteBtnActive: {
-    borderColor: colors.primary,
-    backgroundColor: `${colors.primary}08`,
-  },
-  modaliteBtnIcon: { fontSize: 22 },
-  modaliteBtnLabel: {
-    fontSize: typography.fontSize.sm,
-    fontFamily: typography.fontFamily.semiBold,
-    color: colors.textSecondary,
-    textAlign: "center",
-  },
-  modaliteBtnLabelActive: { color: colors.primary },
-  modaliteBtnHint: {
-    fontSize: 10,
-    fontFamily: typography.fontFamily.regular,
-    color: colors.textMuted,
-    textAlign: "center",
-  },
-  modaliteBtnHintActive: { color: `${colors.primary}99` },
+  fragileCardActive: { borderColor: colors.warning, backgroundColor: colors.warningBg },
+  fragileCardIcon: { fontSize: 22 },
+  fragileCardLabel: { fontSize: typography.fontSize.xs, fontFamily: typography.fontFamily.semiBold, color: colors.textSecondary },
+  fragileCardLabelActive: { color: colors.warningText },
 
-  // Summary (step 3)
-  summaryCard: {
+  // Payment cards
+  payRow: { flexDirection: "row", gap: spacing.sm },
+  payCard: {
+    flex: 1,
     backgroundColor: colors.white,
     borderRadius: radii.xl,
-    padding: spacing.xl,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    padding: spacing.md,
+    alignItems: "center",
+    gap: 4,
+    overflow: "hidden",
+    ...shadows.sm,
+  },
+  payCardActive: { borderColor: colors.primary, backgroundColor: `${colors.primary}08` },
+  payCheck: {
+    position: "absolute",
+    top: 8, right: 8,
+    width: 18, height: 18, borderRadius: 9,
+    backgroundColor: colors.primary,
+    alignItems: "center", justifyContent: "center",
+  },
+  payCheckText: { fontSize: 10, fontFamily: typography.fontFamily.bold, color: colors.white },
+  payCardIcon: { fontSize: 22 },
+  payCardLabel: { fontSize: typography.fontSize.xs, fontFamily: typography.fontFamily.semiBold, color: colors.textSecondary, textAlign: "center" },
+  payCardLabelActive: { color: colors.primary },
+  payCardHint: { fontSize: 9, fontFamily: typography.fontFamily.regular, color: colors.textMuted, textAlign: "center" },
+
+  // Recap (step 3)
+  recap: {
+    flexDirection: "row",
     gap: spacing.md,
+    alignItems: "center",
+    backgroundColor: colors.white,
+    borderRadius: radii.xl,
     borderWidth: 1,
     borderColor: colors.border,
+    padding: spacing.md,
     ...shadows.sm,
   },
-  summaryTitle: {
-    fontSize: typography.fontSize.xs,
-    fontFamily: typography.fontFamily.semiBold,
-    color: colors.textMuted,
-    textTransform: "uppercase",
-    letterSpacing: 1,
-    marginBottom: spacing.xs,
-  },
-  summaryRow: { flexDirection: "row", alignItems: "flex-start", gap: spacing.md },
-  summaryIcon: { fontSize: 16, width: 22, marginTop: 1 },
-  summaryText: {
-    fontSize: typography.fontSize.sm,
-    fontFamily: typography.fontFamily.regular,
-    color: colors.textSecondary,
-    flex: 1,
-    lineHeight: 20,
-  },
+  recapIcon: { fontSize: 22 },
+  recapRoute: { fontSize: typography.fontSize.sm, fontFamily: typography.fontFamily.semiBold, color: colors.textPrimary },
+  recapDetail: { fontSize: typography.fontSize.xs, fontFamily: typography.fontFamily.regular, color: colors.textSecondary, marginTop: 2 },
 
-  noteBox: {
-    backgroundColor: colors.infoBg,
-    borderRadius: radii.lg,
-    padding: spacing.xl,
-  },
-  noteText: {
-    fontSize: typography.fontSize.sm,
-    fontFamily: typography.fontFamily.regular,
-    color: colors.info,
-    lineHeight: 20,
-  },
-
-  footer: {
-    backgroundColor: colors.white,
+  // CTA
+  ctaArea: {
     paddingHorizontal: spacing["2xl"],
-    paddingVertical: spacing.xl,
-    paddingBottom: Platform.OS === "ios" ? 32 : spacing.xl,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    ...shadows.lg,
+    paddingBottom: Platform.OS === "ios" ? 36 : 24,
+    paddingTop: spacing.lg,
   },
-  nextBtn: { width: "100%" },
+  ctaBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.sm,
+    backgroundColor: colors.primary,
+    borderRadius: radii.xl,
+    paddingVertical: spacing.xl,
+    ...shadows.md,
+  },
+  ctaBtnOff: { opacity: 0.35 },
+  ctaBtnText: { fontSize: typography.fontSize.lg, fontFamily: typography.fontFamily.bold, color: colors.white },
+  ctaBtnArrow: { fontSize: typography.fontSize.lg, fontFamily: typography.fontFamily.bold, color: `${colors.white}cc` },
 });
