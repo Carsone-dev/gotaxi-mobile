@@ -1,4 +1,4 @@
-import React, { useRef, useState, useCallback } from "react";
+import React, { useRef, useCallback } from "react";
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   Platform,
   RefreshControl,
 } from "react-native";
+import Animated, { FadeInDown } from "react-native-reanimated";
 import MapView, { Marker, PROVIDER_DEFAULT } from "react-native-maps";
 import { router } from "expo-router";
 import { format } from "date-fns";
@@ -20,7 +21,8 @@ import { formatFCFA, formatTime } from "@/src/utils/formatters";
 import { colors, typography, spacing, radii, shadows } from "@/src/theme";
 import type { Voyage } from "@/src/api/types";
 
-const MAP_HEIGHT = Dimensions.get("window").height * 0.48;
+const { height: SCREEN_H } = Dimensions.get("window");
+const MAP_HEIGHT = SCREEN_H * 0.44;
 
 const BENIN_REGION = {
   latitude: 9.3077,
@@ -35,6 +37,12 @@ function markerColor(v: Voyage): string {
   return colors.primary;
 }
 
+function statusLabel(v: Voyage): string {
+  if (v.statut === "COMPLET") return "Complet";
+  if (v.nombre_places_restantes < v.nombre_places_total) return "En chargement";
+  return "Disponible";
+}
+
 function greeting(): string {
   const h = new Date().getHours();
   if (h < 12) return "Bonjour";
@@ -42,60 +50,82 @@ function greeting(): string {
   return "Bonsoir";
 }
 
-// ── Carte voyage verticale ────────────────────────────────────────────────────
-function VoyageCard({ voyage, onMarkerFocus }: { voyage: Voyage; onMarkerFocus: (v: Voyage) => void }) {
-  const statusColor = markerColor(voyage);
-  const statusLabel =
-    voyage.statut === "COMPLET"
-      ? "Complet"
-      : voyage.nombre_places_restantes < voyage.nombre_places_total
-      ? "En chargement"
-      : "Disponible";
+// ── Carte voyage ──────────────────────────────────────────────────────────────
+function VoyageCard({ voyage, index, onMarkerFocus }: { voyage: Voyage; index: number; onMarkerFocus: (v: Voyage) => void }) {
+  const accent = markerColor(voyage);
+  const label  = statusLabel(voyage);
+  const isFull = voyage.statut === "COMPLET";
 
   return (
-    <Pressable
-      style={styles.voyageCard}
-      onPress={() => {
-        onMarkerFocus(voyage);
-        router.push(`/(client)/voyages/${voyage.id}` as any);
-      }}
-    >
-      {/* Ligne 1 : route + statut */}
-      <View style={styles.cardTop}>
-        <Text style={styles.cardRoute} numberOfLines={1}>
-          {voyage.ville_depart} → {voyage.ville_arrivee}
-        </Text>
-        <View style={[styles.statusPill, { backgroundColor: `${statusColor}18` }]}>
-          <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
-          <Text style={[styles.statusText, { color: statusColor }]}>{statusLabel}</Text>
-        </View>
-      </View>
+    <Animated.View entering={FadeInDown.duration(260).delay(index * 60)}>
+      <Pressable
+        style={({ pressed }) => [styles.voyageCard, pressed && styles.voyageCardPressed]}
+        onPress={() => {
+          onMarkerFocus(voyage);
+          router.push(`/(client)/voyages/${voyage.id}` as any);
+        }}
+      >
+        {/* Barre accent top */}
+        <View style={[styles.cardAccent, { backgroundColor: accent }]} />
 
-      {/* Ligne 2 : point de départ */}
-      <View style={styles.cardPointRow}>
-        <Text style={styles.cardPointIcon}>📍</Text>
-        <Text style={styles.cardPoint} numberOfLines={1}>
-          {voyage.point_depart}
-        </Text>
-      </View>
+        <View style={styles.cardInner}>
+          {/* Ligne 1 : route + statut */}
+          <View style={styles.cardTopRow}>
+            <Text style={styles.cardRoute} numberOfLines={1}>
+              {voyage.ville_depart}
+              <Text style={styles.cardRouteSep}> → </Text>
+              {voyage.ville_arrivee}
+            </Text>
+            <View style={[styles.statusPill, { backgroundColor: `${accent}18` }]}>
+              <View style={[styles.statusDot, { backgroundColor: accent }]} />
+              <Text style={[styles.statusText, { color: accent }]}>{label}</Text>
+            </View>
+          </View>
 
-      {/* Ligne 3 : heure, date, prix, places */}
-      <View style={styles.cardBottom}>
-        <View style={styles.cardTimeBlock}>
-          <Text style={styles.cardTime}>{formatTime(voyage.date_depart)}</Text>
-          <Text style={styles.cardDate}>
-            {format(new Date(voyage.date_depart), "EEE d MMM", { locale: fr })}
-          </Text>
-        </View>
-        <View style={styles.cardRight}>
-          <Text style={styles.cardPrice}>{formatFCFA(voyage.prix_par_place)}</Text>
-          <Text style={styles.cardPriceSub}>/ pers.</Text>
-          <View style={styles.cardPlaceBadge}>
-            <Text style={styles.cardPlaceText}>{voyage.nombre_places_restantes} pl.</Text>
+          {/* Route timeline */}
+          <View style={styles.timeline}>
+            <View style={styles.timelineLine} />
+            <View style={[styles.timelineDot, { backgroundColor: colors.primary }]} />
+            <Text style={styles.timelineCity}>{voyage.ville_depart}</Text>
+            <View style={styles.timelineSpacer} />
+            <View style={[styles.timelineDot, { backgroundColor: colors.black }]} />
+            <Text style={styles.timelineCity}>{voyage.ville_arrivee}</Text>
+          </View>
+
+          {/* Point de départ */}
+          {voyage.point_depart ? (
+            <View style={styles.pointRow}>
+              <Text style={styles.pointIcon}>📍</Text>
+              <Text style={styles.pointText} numberOfLines={1}>{voyage.point_depart}</Text>
+            </View>
+          ) : null}
+
+          {/* Bas : heure, date, places, prix */}
+          <View style={styles.cardBottom}>
+            <View style={styles.cardBottomLeft}>
+              <Text style={styles.cardTime}>{formatTime(voyage.date_depart)}</Text>
+              <View style={styles.dateBadge}>
+                <Text style={styles.dateBadgeText}>
+                  {format(new Date(voyage.date_depart), "EEE d MMM", { locale: fr })}
+                </Text>
+              </View>
+            </View>
+            <View style={styles.cardBottomRight}>
+              <Text style={styles.cardPrice}>{formatFCFA(voyage.prix_par_place)}</Text>
+              <Text style={styles.cardPriceSub}>par pers.</Text>
+              <View style={[
+                styles.placesBadge,
+                isFull && styles.placesBadgeFull,
+              ]}>
+                <Text style={[styles.placesText, isFull && styles.placesTextFull]}>
+                  {isFull ? "Complet" : `${voyage.nombre_places_restantes} place${voyage.nombre_places_restantes > 1 ? "s" : ""}`}
+                </Text>
+              </View>
+            </View>
           </View>
         </View>
-      </View>
-    </Pressable>
+      </Pressable>
+    </Animated.View>
   );
 }
 
@@ -105,7 +135,6 @@ export default function HomeScreen() {
   const { data: voyages, isLoading, refetch, isRefetching } = usePopularVoyages();
   const mapRef = useRef<MapView>(null);
 
-  // Marqueurs sur la carte : uniquement les trajets avec coordonnées GPS valides
   const mapMarkers =
     voyages?.filter(
       (v) =>
@@ -114,25 +143,21 @@ export default function HomeScreen() {
         v.lng_depart,
     ) ?? [];
 
-  // Liste sous les boutons : tous les trajets disponibles, avec ou sans GPS
   const listVoyages =
     voyages?.filter((v) => v.statut === "PUBLIE" || v.statut === "COMPLET") ?? [];
 
   const focusOnMarker = useCallback((v: Voyage) => {
     mapRef.current?.animateToRegion(
-      {
-        latitude: v.lat_depart,
-        longitude: v.lng_depart,
-        latitudeDelta: 0.6,
-        longitudeDelta: 0.6,
-      },
+      { latitude: v.lat_depart, longitude: v.lng_depart, latitudeDelta: 0.6, longitudeDelta: 0.6 },
       400,
     );
   }, []);
 
+  const initials = user ? `${user.prenom[0]}${user.nom[0]}`.toUpperCase() : "?";
+
   return (
     <View style={styles.container}>
-      {/* ── CARTE ─────────────────────────────────────────────── */}
+      {/* ── CARTE ──────────────────────────────────────────────────── */}
       <View style={styles.mapContainer}>
         <MapView
           ref={mapRef}
@@ -149,7 +174,7 @@ export default function HomeScreen() {
               coordinate={{ latitude: v.lat_depart, longitude: v.lng_depart }}
               pinColor={markerColor(v)}
               title={`${v.ville_depart} → ${v.ville_arrivee}`}
-              description={`${formatFCFA(v.prix_par_place)} · ${v.nombre_places_restantes} place${v.nombre_places_restantes > 1 ? "s" : ""}`}
+              description={`${formatFCFA(v.prix_par_place)} · ${v.nombre_places_restantes} pl.`}
               onPress={() => focusOnMarker(v)}
             />
           ))}
@@ -158,19 +183,17 @@ export default function HomeScreen() {
         {/* En-tête flottant */}
         <View style={styles.mapHeader} pointerEvents="box-none">
           <View style={styles.headerCard} pointerEvents="auto">
-            <View>
-              <Text style={styles.greetingText}>{greeting()},</Text>
-              <Text style={styles.nameText}>
+            <View style={styles.headerLeft}>
+              <Text style={styles.greetingText}>{greeting()} 👋</Text>
+              <Text style={styles.nameText} numberOfLines={1}>
                 {user?.prenom} {user?.nom}
               </Text>
             </View>
             <Pressable
               onPress={() => router.push("/(client)/profile" as any)}
-              style={styles.avatarBtn}
+              style={({ pressed }) => [styles.avatarBtn, pressed && { opacity: 0.8 }]}
             >
-              <Text style={styles.avatarText}>
-                {user ? `${user.prenom[0]}${user.nom[0]}`.toUpperCase() : "?"}
-              </Text>
+              <Text style={styles.avatarText}>{initials}</Text>
             </Pressable>
           </View>
         </View>
@@ -178,9 +201,9 @@ export default function HomeScreen() {
         {/* Légende */}
         <View style={styles.legend} pointerEvents="none">
           {[
-            { color: colors.primary, label: "Disponible" },
+            { color: colors.primary,     label: "Disponible" },
             { color: colors.orangeOrange, label: "En chargement" },
-            { color: colors.error, label: "Complet" },
+            { color: colors.error,       label: "Complet" },
           ].map(({ color, label }) => (
             <View key={label} style={styles.legendItem}>
               <View style={[styles.legendDot, { backgroundColor: color }]} />
@@ -190,10 +213,10 @@ export default function HomeScreen() {
         </View>
       </View>
 
-      {/* ── PANNEAU BAS (scrollable) ───────────────────────────── */}
+      {/* ── PANNEAU BAS ────────────────────────────────────────────── */}
       <ScrollView
-        style={styles.bottomPanel}
-        contentContainerStyle={styles.bottomContent}
+        style={styles.panel}
+        contentContainerStyle={styles.panelContent}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         refreshControl={
@@ -205,50 +228,60 @@ export default function HomeScreen() {
           />
         }
       >
-        {/* Boutons d'action */}
+        {/* ── Actions rapides ───────── */}
         <View style={styles.actions}>
+          {/* Voyager */}
           <Pressable
-            style={[styles.actionCard, styles.actionCardGreen]}
+            style={({ pressed }) => [styles.actionCard, styles.actionGreen, pressed && styles.actionPressed]}
             onPress={() => router.push("/(client)/voyages" as any)}
           >
             <Text style={styles.actionBgEmoji}>🚗</Text>
-            <View style={styles.actionIconWrap}>
+            <View style={styles.actionIconCircle}>
               <Text style={styles.actionIconEmoji}>🚗</Text>
             </View>
-            <View style={styles.actionBottom}>
+            <View style={styles.actionBody}>
               <Text style={styles.actionTitle}>Voyager</Text>
               <Text style={styles.actionDesc}>Trouver un trajet</Text>
-              <View style={styles.actionCta}>
-                <Text style={styles.actionCtaTxt}>Réserver →</Text>
-              </View>
+            </View>
+            <View style={styles.actionArrow}>
+              <Text style={styles.actionArrowTxt}>→</Text>
             </View>
           </Pressable>
 
+          {/* Colis */}
           <Pressable
-            style={[styles.actionCard, styles.actionCardDark]}
+            style={({ pressed }) => [styles.actionCard, styles.actionDark, pressed && styles.actionPressed]}
             onPress={() => router.push("/(client)/colis" as any)}
           >
             <Text style={styles.actionBgEmoji}>📦</Text>
-            <View style={styles.actionIconWrap}>
+            <View style={styles.actionIconCircle}>
               <Text style={styles.actionIconEmoji}>📦</Text>
             </View>
-            <View style={styles.actionBottom}>
+            <View style={styles.actionBody}>
               <Text style={styles.actionTitle}>Colis</Text>
               <Text style={styles.actionDesc}>Envoyer un colis</Text>
-              <View style={styles.actionCta}>
-                <Text style={styles.actionCtaTxt}>Expédier →</Text>
-              </View>
+            </View>
+            <View style={styles.actionArrow}>
+              <Text style={styles.actionArrowTxt}>→</Text>
             </View>
           </Pressable>
         </View>
 
-        {/* En-tête section voyages */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>
-            Trajets disponibles
-            {listVoyages.length > 0 ? ` (${listVoyages.length})` : ""}
-          </Text>
-          <Pressable onPress={() => refetch()} disabled={isRefetching || isLoading}>
+        {/* ── En-tête section ──────── */}
+        <View style={styles.sectionRow}>
+          <View style={styles.sectionTitleWrap}>
+            <Text style={styles.sectionTitle}>Trajets disponibles</Text>
+            {!isLoading && listVoyages.length > 0 && (
+              <View style={styles.countBadge}>
+                <Text style={styles.countBadgeText}>{listVoyages.length}</Text>
+              </View>
+            )}
+          </View>
+          <Pressable
+            onPress={() => refetch()}
+            disabled={isRefetching || isLoading}
+            style={({ pressed }) => [styles.refreshBtn, pressed && { opacity: 0.7 }]}
+          >
             {isLoading || isRefetching ? (
               <ActivityIndicator color={colors.primary} size="small" />
             ) : (
@@ -257,17 +290,25 @@ export default function HomeScreen() {
           </Pressable>
         </View>
 
-        {/* Liste verticale des voyages */}
+        {/* ── Liste voyages ─────────── */}
         {isLoading ? (
-          <ActivityIndicator color={colors.primary} style={{ marginTop: spacing["2xl"] }} />
+          <ActivityIndicator color={colors.primary} style={{ marginTop: spacing["3xl"] }} />
         ) : listVoyages.length === 0 ? (
-          <View style={styles.emptyCard}>
-            <Text style={styles.emptyText}>Aucun trajet disponible pour l'instant</Text>
+          <View style={styles.empty}>
+            <Text style={styles.emptyEmoji}>🗺️</Text>
+            <Text style={styles.emptyTitle}>Aucun trajet disponible</Text>
+            <Text style={styles.emptySub}>Revenez plus tard ou actualisez la page.</Text>
+            <Pressable
+              onPress={() => refetch()}
+              style={({ pressed }) => [styles.emptyBtn, pressed && { opacity: 0.8 }]}
+            >
+              <Text style={styles.emptyBtnTxt}>Actualiser</Text>
+            </Pressable>
           </View>
         ) : (
-          <View style={styles.voyageList}>
-            {listVoyages.map((v) => (
-              <VoyageCard key={v.id} voyage={v} onMarkerFocus={focusOnMarker} />
+          <View style={styles.list}>
+            {listVoyages.map((v, i) => (
+              <VoyageCard key={v.id} voyage={v} index={i} onMarkerFocus={focusOnMarker} />
             ))}
           </View>
         )}
@@ -294,32 +335,33 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.93)",
+    backgroundColor: "rgba(255,255,255,0.94)",
     borderRadius: radii.xl,
-    padding: spacing.md,
+    paddingVertical: spacing.md,
     paddingHorizontal: spacing.xl,
     ...shadows.md,
   },
+  headerLeft: { flex: 1, marginRight: spacing.md },
   greetingText: {
-    fontSize: typography.fontSize.xs,
-    fontFamily: typography.fontFamily.regular,
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.medium,
     color: colors.textSecondary,
   },
   nameText: {
-    fontSize: typography.fontSize.base,
+    fontSize: typography.fontSize.lg,
     fontFamily: typography.fontFamily.bold,
     color: colors.textPrimary,
   },
   avatarBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     backgroundColor: colors.primary,
     alignItems: "center",
     justifyContent: "center",
   },
   avatarText: {
-    fontSize: typography.fontSize.sm,
+    fontSize: typography.fontSize.base,
     fontFamily: typography.fontFamily.bold,
     color: colors.white,
   },
@@ -329,12 +371,13 @@ const styles = StyleSheet.create({
     left: spacing.md,
     flexDirection: "row",
     gap: spacing.xs,
+    flexWrap: "wrap",
   },
   legendItem: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    backgroundColor: "rgba(255,255,255,0.9)",
+    backgroundColor: "rgba(255,255,255,0.92)",
     paddingHorizontal: spacing.sm,
     paddingVertical: 3,
     borderRadius: radii.full,
@@ -348,51 +391,51 @@ const styles = StyleSheet.create({
   },
 
   // Panneau bas
-  bottomPanel: {
+  panel: {
     flex: 1,
     backgroundColor: colors.white,
     borderTopLeftRadius: radii["2xl"],
     borderTopRightRadius: radii["2xl"],
-    marginTop: -16,
+    marginTop: -18,
     ...shadows.lg,
   },
-  bottomContent: { paddingBottom: 32, paddingTop: spacing.xl },
+  panelContent: { paddingTop: spacing.xl, paddingBottom: 40 },
 
   // Actions
   actions: {
     flexDirection: "row",
     gap: spacing.md,
     paddingHorizontal: spacing["2xl"],
-    marginBottom: spacing.xl,
+    marginBottom: spacing["2xl"],
   },
   actionCard: {
     flex: 1,
     borderRadius: radii["2xl"],
-    padding: spacing.xl,
-    minHeight: 168,
-    justifyContent: "space-between",
+    padding: spacing.lg,
+    gap: spacing.sm,
     overflow: "hidden",
     ...shadows.md,
   },
-  actionCardGreen: { backgroundColor: colors.primary },
-  actionCardDark: { backgroundColor: colors.black },
+  actionGreen: { backgroundColor: colors.primary },
+  actionDark:  { backgroundColor: colors.black },
+  actionPressed: { opacity: 0.88 },
   actionBgEmoji: {
     position: "absolute",
-    fontSize: 88,
-    right: -14,
-    bottom: -10,
+    fontSize: 72,
+    right: -10,
+    bottom: -8,
     opacity: 0.1,
   },
-  actionIconWrap: {
-    width: 46,
-    height: 46,
-    borderRadius: radii.lg,
+  actionIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: "rgba(255,255,255,0.18)",
     alignItems: "center",
     justifyContent: "center",
   },
-  actionIconEmoji: { fontSize: 22 },
-  actionBottom: { gap: 3 },
+  actionIconEmoji: { fontSize: 20 },
+  actionBody: { flex: 1, gap: 2 },
   actionTitle: {
     fontSize: typography.fontSize.lg,
     fontFamily: typography.fontFamily.bold,
@@ -401,70 +444,92 @@ const styles = StyleSheet.create({
   actionDesc: {
     fontSize: typography.fontSize.xs,
     fontFamily: typography.fontFamily.regular,
-    color: "rgba(255,255,255,0.62)",
-    marginBottom: spacing.xs,
+    color: "rgba(255,255,255,0.65)",
   },
-  actionCta: {
-    alignSelf: "flex-start",
+  actionArrow: {
+    alignSelf: "flex-end",
     backgroundColor: "rgba(255,255,255,0.15)",
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: radii.full,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  actionCtaTxt: {
-    fontSize: typography.fontSize.xs,
-    fontFamily: typography.fontFamily.semiBold,
+  actionArrowTxt: {
+    fontSize: typography.fontSize.base,
+    fontFamily: typography.fontFamily.bold,
     color: colors.white,
   },
 
-  // En-tête section
-  sectionHeader: {
+  // Section header
+  sectionRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: spacing["2xl"],
-    marginBottom: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  sectionTitleWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
   },
   sectionTitle: {
-    fontSize: typography.fontSize.base,
+    fontSize: typography.fontSize.lg,
     fontFamily: typography.fontFamily.bold,
     color: colors.textPrimary,
   },
+  countBadge: {
+    backgroundColor: colors.primary,
+    borderRadius: radii.full,
+    minWidth: 22,
+    height: 22,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: spacing.xs,
+  },
+  countBadgeText: {
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamily.bold,
+    color: colors.white,
+  },
+  refreshBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   refreshIcon: {
-    fontSize: 20,
+    fontSize: 18,
     color: colors.primary,
     fontFamily: typography.fontFamily.bold,
+    lineHeight: 20,
   },
 
-  // Vide
-  emptyCard: {
-    marginHorizontal: spacing["2xl"],
-    backgroundColor: colors.surface,
-    borderRadius: radii.xl,
-    padding: spacing["2xl"],
-    alignItems: "center",
-  },
-  emptyText: {
-    fontSize: typography.fontSize.sm,
-    fontFamily: typography.fontFamily.regular,
-    color: colors.textMuted,
-    textAlign: "center",
-  },
-
-  // Liste voyages
-  voyageList: {
+  // Liste
+  list: {
     paddingHorizontal: spacing["2xl"],
     gap: spacing.md,
   },
+
+  // Carte voyage
   voyageCard: {
-    backgroundColor: colors.surface,
+    backgroundColor: colors.white,
     borderRadius: radii.xl,
-    padding: spacing.xl,
-    gap: spacing.md,
     borderWidth: 1,
     borderColor: colors.border,
+    overflow: "hidden",
+    ...shadows.sm,
   },
-  cardTop: {
+  voyageCardPressed: { opacity: 0.85 },
+  cardAccent: { height: 4, width: "100%" },
+  cardInner: { padding: spacing.xl, gap: spacing.md },
+
+  cardTopRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
@@ -476,6 +541,10 @@ const styles = StyleSheet.create({
     fontFamily: typography.fontFamily.bold,
     color: colors.textPrimary,
   },
+  cardRouteSep: {
+    color: colors.textMuted,
+    fontFamily: typography.fontFamily.regular,
+  },
   statusPill: {
     flexDirection: "row",
     alignItems: "center",
@@ -485,41 +554,88 @@ const styles = StyleSheet.create({
     borderRadius: radii.full,
   },
   statusDot: { width: 7, height: 7, borderRadius: 4 },
-  statusText: {
-    fontSize: typography.fontSize.xs,
-    fontFamily: typography.fontFamily.semiBold,
+  statusText: { fontSize: typography.fontSize.xs, fontFamily: typography.fontFamily.semiBold },
+
+  // Timeline
+  timeline: {
+    flexDirection: "row",
+    alignItems: "center",
+    position: "relative",
+    gap: spacing.xs,
   },
-  cardPointRow: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
-  cardPointIcon: { fontSize: 13 },
-  cardPoint: {
+  timelineLine: {
+    position: "absolute",
+    left: 6,
+    right: 6,
+    height: 1.5,
+    backgroundColor: colors.border,
+    zIndex: 0,
+  },
+  timelineDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: colors.white,
+    zIndex: 1,
+  },
+  timelineCity: {
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamily.medium,
+    color: colors.textSecondary,
+    flex: 1,
+  },
+  timelineSpacer: { flex: 1 },
+
+  // Point départ
+  pointRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+  },
+  pointIcon: { fontSize: 12 },
+  pointText: {
     flex: 1,
     fontSize: typography.fontSize.sm,
     fontFamily: typography.fontFamily.regular,
     color: colors.textSecondary,
   },
+
+  // Bas de carte
   cardBottom: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-end",
+    paddingTop: spacing.xs,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    marginTop: spacing.xs,
   },
-  cardTimeBlock: { gap: 2 },
+  cardBottomLeft: { gap: 4 },
   cardTime: {
-    fontSize: typography.fontSize.xl,
+    fontSize: typography.fontSize["3xl"],
     fontFamily: typography.fontFamily.extraBold,
     color: colors.textPrimary,
+    lineHeight: 30,
   },
-  cardDate: {
+  dateBadge: {
+    alignSelf: "flex-start",
+    backgroundColor: colors.surface,
+    borderRadius: radii.full,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  dateBadgeText: {
     fontSize: typography.fontSize.xs,
     fontFamily: typography.fontFamily.medium,
     color: colors.textSecondary,
     textTransform: "capitalize",
   },
-  cardRight: {
-    alignItems: "flex-end",
-    gap: 4,
-  },
+  cardBottomRight: { alignItems: "flex-end", gap: 4 },
   cardPrice: {
-    fontSize: typography.fontSize.lg,
+    fontSize: typography.fontSize.xl,
     fontFamily: typography.fontFamily.extraBold,
     color: colors.primary,
   },
@@ -527,16 +643,57 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.xs,
     fontFamily: typography.fontFamily.regular,
     color: colors.textMuted,
+    marginTop: -4,
   },
-  cardPlaceBadge: {
+  placesBadge: {
     backgroundColor: colors.successBg,
     borderRadius: radii.full,
     paddingHorizontal: spacing.sm,
     paddingVertical: 2,
   },
-  cardPlaceText: {
+  placesBadgeFull: { backgroundColor: colors.errorBg },
+  placesText: {
     fontSize: typography.fontSize.xs,
     fontFamily: typography.fontFamily.semiBold,
     color: colors.success,
+  },
+  placesTextFull: { color: colors.error },
+
+  // Vide
+  empty: {
+    marginHorizontal: spacing["2xl"],
+    marginTop: spacing["2xl"],
+    backgroundColor: colors.surface,
+    borderRadius: radii["2xl"],
+    padding: spacing["3xl"],
+    alignItems: "center",
+    gap: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  emptyEmoji: { fontSize: 44 },
+  emptyTitle: {
+    fontSize: typography.fontSize.lg,
+    fontFamily: typography.fontFamily.bold,
+    color: colors.textPrimary,
+  },
+  emptySub: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.regular,
+    color: colors.textMuted,
+    textAlign: "center",
+    lineHeight: 20,
+  },
+  emptyBtn: {
+    marginTop: spacing.xs,
+    backgroundColor: colors.primary,
+    borderRadius: radii.full,
+    paddingHorizontal: spacing["3xl"],
+    paddingVertical: spacing.md,
+  },
+  emptyBtnTxt: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.bold,
+    color: colors.white,
   },
 });
