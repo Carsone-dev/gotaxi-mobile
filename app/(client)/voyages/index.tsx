@@ -310,7 +310,7 @@ export default function VoyagesScreen() {
     setStep(s);
   }
 
-  const canStep2 = !!cityDepart && pointDepart.trim().length >= 3;
+  const canStep2 = !!cityDepart;
   const canSearch = !!cityArrivee;
 
   const entering = directionRef.current === "forward"
@@ -389,10 +389,11 @@ export default function VoyagesScreen() {
                   </Pressable>
                 </View>
 
-                {/* Point d'embarquement */}
+                {/* Point d'embarquement (optionnel) */}
                 <View style={styles.fieldBlock}>
                   <Text style={styles.fieldLabel}>
                     <Text style={styles.fieldLabelDot}>● </Text>Point d'embarquement
+                    <Text style={styles.fieldLabelOpt}> (optionnel)</Text>
                   </Text>
                   <TextInput
                     style={styles.textInput}
@@ -679,6 +680,11 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   fieldLabelDot: { color: colors.primary },
+  fieldLabelOpt: {
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamily.regular,
+    color: colors.textMuted,
+  },
   fieldHint: {
     fontSize: typography.fontSize.xs,
     fontFamily: typography.fontFamily.regular,
