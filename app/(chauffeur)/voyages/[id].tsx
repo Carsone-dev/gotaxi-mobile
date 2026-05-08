@@ -625,6 +625,8 @@ export default function VoyageDetailChauffeurScreen() {
   const {
     data: reservations,
     isLoading: resaLoading,
+    isError: resaError,
+    error: resaErrorObj,
     refetch: refetchReservations,
   } = useVoyageReservations(id, undefined, canFetchReservations);
   const {
@@ -866,6 +868,15 @@ export default function VoyageDetailChauffeurScreen() {
           </View>
           {resaLoading ? (
             <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.md }} />
+          ) : resaError ? (
+            <View style={styles.errorRow}>
+              <Text style={styles.errorRowText}>
+                ⚠️ {(resaErrorObj as any)?.response?.data?.detail ?? (resaErrorObj as any)?.message ?? "Erreur de chargement"}
+              </Text>
+              <Pressable onPress={() => refetchReservations()} style={styles.retryBtn}>
+                <Text style={styles.retryBtnText}>Réessayer</Text>
+              </Pressable>
+            </View>
           ) : reservations && reservations.length > 0 ? (
             <View style={{ gap: spacing.md }}>
               {reservations.map((r) => (
@@ -1118,6 +1129,28 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     textAlign: "center",
     paddingVertical: spacing.md,
+  },
+  errorRow: {
+    gap: spacing.sm,
+    alignItems: "center",
+    paddingVertical: spacing.sm,
+  },
+  errorRowText: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.medium,
+    color: colors.error,
+    textAlign: "center",
+  },
+  retryBtn: {
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.primary,
+    borderRadius: radii.md,
+  },
+  retryBtnText: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.semiBold,
+    color: colors.white,
   },
   colisSectionHeader: {
     flexDirection: "row",

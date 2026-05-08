@@ -336,16 +336,17 @@ export default function ReservationsScreen() {
   const {
     data: incoming,
     isLoading,
+    isError,
+    error,
     refetch,
     isRefetching,
   } = useIncomingReservations();
 
-  const pendingCount = incoming?.length ?? 0;
+  const pendingList = incoming?.filter((r) => r.statut === "EN_ATTENTE") ?? [];
+  const pendingCount = pendingList.length;
   const confirmedList = incoming?.filter((r) => r.statut === "CONFIRMEE") ?? [];
 
-  const data = tab === "pending"
-    ? (incoming?.filter((r) => r.statut === "EN_ATTENTE") ?? [])
-    : confirmedList;
+  const data = tab === "pending" ? pendingList : confirmedList;
 
   return (
     <View style={styles.container}>
@@ -386,6 +387,17 @@ export default function ReservationsScreen() {
 
       {isLoading ? (
         <ActivityIndicator color={colors.primary} style={{ marginTop: spacing["3xl"] }} />
+      ) : isError ? (
+        <View style={styles.empty}>
+          <Text style={styles.emptyIcon}>⚠️</Text>
+          <Text style={styles.emptyTitle}>Erreur de chargement</Text>
+          <Text style={styles.emptySubtitle}>
+            {(error as any)?.response?.data?.detail ?? (error as any)?.message ?? "Impossible de charger les réservations"}
+          </Text>
+          <Pressable onPress={() => refetch()} style={styles.retryBtn}>
+            <Text style={styles.retryBtnText}>Réessayer</Text>
+          </Pressable>
+        </View>
       ) : (
         <FlatList
           data={data}
@@ -496,5 +508,18 @@ const styles = StyleSheet.create({
     fontFamily: typography.fontFamily.regular,
     color: colors.textMuted,
     textAlign: "center",
+    paddingHorizontal: spacing["2xl"],
+  },
+  retryBtn: {
+    marginTop: spacing.md,
+    paddingHorizontal: spacing["2xl"],
+    paddingVertical: spacing.md,
+    backgroundColor: colors.primary,
+    borderRadius: radii.md,
+  },
+  retryBtnText: {
+    fontSize: typography.fontSize.base,
+    fontFamily: typography.fontFamily.semiBold,
+    color: colors.white,
   },
 });
