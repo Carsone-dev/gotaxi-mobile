@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -11,7 +11,7 @@ import {
   Platform,
 } from "react-native";
 import * as Location from "expo-location";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import { VILLES, VILLES_LIST, nearestCity } from "@/src/constants/cities";
@@ -203,11 +203,6 @@ export default function VoyagesScreen() {
     (v) => v.nombre_places_restantes >= nombrePlaces,
   );
 
-  // Détection GPS au montage
-  useEffect(() => {
-    detectLocation();
-  }, []);
-
   const detectLocation = useCallback(async () => {
     setLocStatus("detecting");
     try {
@@ -216,14 +211,37 @@ export default function VoyagesScreen() {
         setLocStatus("denied");
         return;
       }
-      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      const city = nearestCity(pos.coords.latitude, pos.coords.longitude);
-      setCityDepart(city);
+
+      // Position en cache (< 5 min) → instantané
+      const cached = await Location.getLastKnownPositionAsync({ maxAge: 300_000 });
+      if (cached) {
+        setCityDepart(nearestCity(cached.coords.latitude, cached.coords.longitude));
+        setLocStatus("found");
+        return;
+      }
+
+      // Nouvelle position GPS avec timeout 8 s pour éviter un blocage indéfini
+      const pos = await Promise.race([
+        Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("timeout")), 8_000)
+        ),
+      ]);
+      setCityDepart(nearestCity(pos.coords.latitude, pos.coords.longitude));
       setLocStatus("found");
     } catch {
       setLocStatus("denied");
     }
   }, []);
+
+  // Lance la détection uniquement quand l'écran devient actif (tab monté en arrière-plan au démarrage)
+  useFocusEffect(
+    useCallback(() => {
+      if (locStatus === "idle") {
+        detectLocation();
+      }
+    }, [locStatus, detectLocation])
+  );
 
   const canGoStep2 = !!cityDepart && pointDepart.trim().length >= 3;
   const canShowResults = !!cityDepart && !!cityArrivee;

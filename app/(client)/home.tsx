@@ -207,29 +207,38 @@ export default function HomeScreen() {
       >
         {/* Boutons d'action */}
         <View style={styles.actions}>
-          {/* Voyager — déclenche le flow complet */}
           <Pressable
-            style={styles.voyagerBtn}
+            style={[styles.actionCard, styles.actionCardGreen]}
             onPress={() => router.push("/(client)/voyages" as any)}
           >
-            <View style={styles.voyagerBtnLeft}>
-              <Text style={styles.voyagerIcon}>🚗</Text>
-              <View>
-                <Text style={styles.voyagerLabel}>Voyager</Text>
-                <Text style={styles.voyagerSub}>Détection auto · destination · places</Text>
-              </View>
+            <Text style={styles.actionBgEmoji}>🚗</Text>
+            <View style={styles.actionIconWrap}>
+              <Text style={styles.actionIconEmoji}>🚗</Text>
             </View>
-            <View style={styles.voyagerArrow}>
-              <Text style={styles.voyagerArrowText}>›</Text>
+            <View style={styles.actionBottom}>
+              <Text style={styles.actionTitle}>Voyager</Text>
+              <Text style={styles.actionDesc}>Trouver un trajet</Text>
+              <View style={styles.actionCta}>
+                <Text style={styles.actionCtaTxt}>Réserver →</Text>
+              </View>
             </View>
           </Pressable>
 
           <Pressable
-            style={styles.colisBtn}
+            style={[styles.actionCard, styles.actionCardDark]}
             onPress={() => router.push("/(client)/colis" as any)}
           >
-            <Text style={styles.colisIcon}>📦</Text>
-            <Text style={styles.colisLabel}>Envoyer{"\n"}un colis</Text>
+            <Text style={styles.actionBgEmoji}>📦</Text>
+            <View style={styles.actionIconWrap}>
+              <Text style={styles.actionIconEmoji}>📦</Text>
+            </View>
+            <View style={styles.actionBottom}>
+              <Text style={styles.actionTitle}>Colis</Text>
+              <Text style={styles.actionDesc}>Envoyer un colis</Text>
+              <View style={styles.actionCta}>
+                <Text style={styles.actionCtaTxt}>Expédier →</Text>
+              </View>
+            </View>
           </Pressable>
         </View>
 
@@ -355,61 +364,57 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     paddingHorizontal: spacing["2xl"],
     marginBottom: spacing.xl,
-    alignItems: "stretch",
   },
-  voyagerBtn: {
+  actionCard: {
     flex: 1,
-    backgroundColor: colors.primary,
-    borderRadius: radii.xl,
-    padding: spacing.lg,
-    flexDirection: "row",
-    alignItems: "center",
+    borderRadius: radii["2xl"],
+    padding: spacing.xl,
+    minHeight: 168,
     justifyContent: "space-between",
+    overflow: "hidden",
     ...shadows.md,
   },
-  voyagerBtnLeft: { flexDirection: "row", alignItems: "center", gap: spacing.md, flex: 1 },
-  voyagerIcon: { fontSize: 28 },
-  voyagerLabel: {
-    fontSize: typography.fontSize.base,
+  actionCardGreen: { backgroundColor: colors.primary },
+  actionCardDark: { backgroundColor: colors.black },
+  actionBgEmoji: {
+    position: "absolute",
+    fontSize: 88,
+    right: -14,
+    bottom: -10,
+    opacity: 0.1,
+  },
+  actionIconWrap: {
+    width: 46,
+    height: 46,
+    borderRadius: radii.lg,
+    backgroundColor: "rgba(255,255,255,0.18)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  actionIconEmoji: { fontSize: 22 },
+  actionBottom: { gap: 3 },
+  actionTitle: {
+    fontSize: typography.fontSize.lg,
     fontFamily: typography.fontFamily.bold,
     color: colors.white,
   },
-  voyagerSub: {
+  actionDesc: {
     fontSize: typography.fontSize.xs,
     fontFamily: typography.fontFamily.regular,
-    color: "rgba(255,255,255,0.75)",
-    marginTop: 1,
+    color: "rgba(255,255,255,0.62)",
+    marginBottom: spacing.xs,
   },
-  voyagerArrow: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: "rgba(255,255,255,0.2)",
-    alignItems: "center",
-    justifyContent: "center",
+  actionCta: {
+    alignSelf: "flex-start",
+    backgroundColor: "rgba(255,255,255,0.15)",
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: radii.full,
   },
-  voyagerArrowText: {
-    fontSize: 20,
-    color: colors.white,
-    fontFamily: typography.fontFamily.bold,
-    lineHeight: 24,
-  },
-  colisBtn: {
-    width: 80,
-    backgroundColor: colors.black,
-    borderRadius: radii.xl,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: spacing.xs,
-    paddingVertical: spacing.lg,
-    ...shadows.md,
-  },
-  colisIcon: { fontSize: 24 },
-  colisLabel: {
+  actionCtaTxt: {
     fontSize: typography.fontSize.xs,
     fontFamily: typography.fontFamily.semiBold,
     color: colors.white,
-    textAlign: "center",
   },
 
   // En-tête section
