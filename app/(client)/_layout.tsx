@@ -42,10 +42,24 @@ export default function ClientLayout() {
         }}
       />
       <Tabs.Screen
+        name="reservations"
+        options={{
+          title: "Réservations",
+          tabBarIcon: ({ color, size }) => <Ionicons name="ticket" size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
         name="colis"
         options={{
           title: "Colis",
           tabBarIcon: ({ color, size }) => <Ionicons name="cube" size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="wallet"
+        options={{
+          title: "Wallet",
+          tabBarIcon: ({ color, size }) => <Ionicons name="wallet" size={size} color={color} />,
         }}
       />
       <Tabs.Screen

@@ -6,7 +6,7 @@ export const useMyReservations = () =>
   useQuery({
     queryKey: ["reservations", "me"],
     queryFn: reservationsApi.myReservations,
-    staleTime: 30_000,
+    staleTime: 0,
   });
 
 export const useIncomingReservations = () =>

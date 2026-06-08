@@ -18,8 +18,10 @@
       "supportsTablet": false,
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "GoTaxi a besoin de votre position pour vous trouver des trajets proches",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "GoTaxi a besoin de votre position pour la navigation GPS pendant le trajet",
         "NSCameraUsageDescription": "Pour photographier vos colis et documents",
-        "NSPhotoLibraryUsageDescription": "Pour ajouter une photo de profil ou de colis"
+        "NSPhotoLibraryUsageDescription": "Pour ajouter une photo de profil ou de colis",
+        "UIBackgroundModes": ["location"]
       }
     },
     "android": {
@@ -31,20 +33,32 @@
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
         "CAMERA",
         "VIBRATE",
         "POST_NOTIFICATIONS"
       ],
+      "config": {
+        "googleMaps": {
+          "apiKey": "REMPLACER_PAR_VOTRE_CLE_API_GOOGLE_MAPS"
+        }
+      },
       "edgeToEdgeEnabled": true
     },
     "plugins": [
       "expo-router",
       "expo-secure-store",
       "expo-localization",
-      "expo-font"
+      "expo-font",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "GoTaxi a besoin de votre position pour la navigation GPS"
+        }
+      ]
     ],
     "extra": {
-      "apiUrl": "http://192.168.1.102:8001/api/v1",
+      "apiUrl": "http://192.168.1.101:8001/api/v1",
       "eas": {
         "projectId": "your-eas-project-id"
       }

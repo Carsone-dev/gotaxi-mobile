@@ -338,3 +338,56 @@ export interface ColisCreatePayload {
   destinataire_telephone: string;
   modalite_paiement?: ColisModalitePaiement;
 }
+
+// ─── Wallet ───────────────────────────────────────────────────────────────────
+
+export type OperateurMM = "MTN_MOMO" | "ORANGE_MONEY" | "MOOV_MONEY";
+export type TransactionType =
+  | "RECHARGE"
+  | "PAIEMENT_VOYAGE"
+  | "PAIEMENT_COLIS"
+  | "REVERSEMENT"
+  | "REMBOURSEMENT"
+  | "COMMISSION";
+export type TransactionStatut = "EN_ATTENTE" | "EN_COURS" | "REUSSI" | "ECHEC" | "ANNULE";
+
+export interface Wallet {
+  id: string;
+  solde: number;
+  devise: string;
+  actif: boolean;
+}
+
+export interface Transaction {
+  id: string;
+  type: TransactionType;
+  statut: TransactionStatut;
+  operateur: OperateurMM | null;
+  montant: number;
+  created_at: string;
+}
+
+export interface TransactionListResult {
+  items: Transaction[];
+  total: number;
+  page: number;
+  size: number;
+  pages: number;
+}
+
+export interface RechargeInitiatePayload {
+  montant: number;
+  operateur: OperateurMM;
+  telephone: string;
+}
+
+export interface WithdrawPayload {
+  montant: number;
+  telephone: string;
+  operateur: OperateurMM;
+}
+
+export interface TransferPayload {
+  destinataire_telephone: string;
+  montant: number;
+}

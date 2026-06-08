@@ -5,7 +5,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
-  Platform,
   Pressable,
   StatusBar,
   StyleSheet,
@@ -35,7 +34,6 @@ function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number) {
   return 2 * R * Math.asin(Math.sqrt(a));
 }
 
-// Annonce vocale — import dynamique pour ne pas bloquer si expo-speech absent
 async function announce(text: string) {
   try {
     // @ts-ignore — optionnel : npx expo install expo-speech
@@ -50,16 +48,11 @@ async function announce(text: string) {
   }
 }
 
-// ─── Marqueur véhicule ────────────────────────────────────────────────────────
+// ─── Marqueurs ────────────────────────────────────────────────────────────────
 
 function VehicleMarker({ heading }: { heading: number }) {
   return (
-    <View
-      style={[
-        markerS.vehicle,
-        { transform: [{ rotate: `${heading}deg` }] },
-      ]}
-    >
+    <View style={[markerS.vehicle, { transform: [{ rotate: `${heading}deg` }] }]}>
       <Text style={markerS.vehicleIcon}>🚗</Text>
     </View>
   );
@@ -133,21 +126,28 @@ export default function NavigationScreen() {
 
   const mapRef = useRef<MapView>(null);
 
-  const [position, setPosition]           = useState<LatLng | null>(null);
-  const [heading, setHeading]             = useState(0);
-  const [speed, setSpeed]                 = useState(0); // m/s
-  const [currentLocality, setLocality]    = useState<string | null>(null);
-  const [soundOn, setSoundOn]             = useState(true);
-  const [following, setFollowing]         = useState(true);
+  const [position, setPosition]        = useState<LatLng | null>(null);
+  const [heading, setHeading]          = useState(0);
+  const [speed, setSpeed]              = useState(0);
+  const [currentLocality, setLocality] = useState<string | null>(null);
+  const [soundOn, setSoundOn]          = useState(true);
+  const [following, setFollowing]      = useState(true);
 
-  const lastLocalityRef       = useRef<string | null>(null);
-  const lastBroadcastRef      = useRef(0);
-  const lastGeocodeRef        = useRef(0);
-  const approachAnnouncedRef  = useRef(false);
-  const soundRef              = useRef(true);
+  // Refs pour le callback GPS stable — évite de recréer la souscription
+  const voyageRef    = useRef(voyage);
+  const followingRef = useRef(following);
+  const showToastRef = useRef(showToast);
 
-  // Sync soundRef avec l'état pour les callbacks asynchrones
-  useEffect(() => { soundRef.current = soundOn; }, [soundOn]);
+  const lastLocalityRef      = useRef<string | null>(null);
+  const lastBroadcastRef     = useRef(0);
+  const lastGeocodeRef       = useRef(0);
+  const approachAnnouncedRef = useRef(false);
+  const soundRef             = useRef(true);
+
+  useEffect(() => { voyageRef.current    = voyage;    }, [voyage]);
+  useEffect(() => { followingRef.current = following; }, [following]);
+  useEffect(() => { showToastRef.current = showToast; }, [showToast]);
+  useEffect(() => { soundRef.current     = soundOn;   }, [soundOn]);
 
   const totalKm = voyage
     ? haversineKm(voyage.lat_depart, voyage.lng_depart, voyage.lat_arrivee, voyage.lng_arrivee)
@@ -157,108 +157,111 @@ export default function NavigationScreen() {
     ? haversineKm(position.latitude, position.longitude, voyage.lat_arrivee, voyage.lng_arrivee)
     : totalKm;
 
-  const progress = totalKm > 0 ? Math.min(1, (totalKm - remainingKm) / totalKm) : 0;
+  const progress    = totalKm > 0 ? Math.min(1, (totalKm - remainingKm) / totalKm) : 0;
   const progressPct = Math.round(progress * 100);
-  const speedKmh = Math.round((speed ?? 0) * 3.6);
+  const speedKmh    = Math.round((speed ?? 0) * 3.6);
 
-  // ── Callback mise à jour GPS ──────────────────────────────────────────────
+  // ── Callback GPS stable (deps vides → jamais recréé → souscription stable) ─
 
-  const onLocationUpdate = useCallback(
-    async (loc: Location.LocationObject) => {
-      const { latitude, longitude, speed: spd, heading: hdg } = loc.coords;
+  const onLocationUpdate = useCallback(async (loc: Location.LocationObject) => {
+    const { latitude, longitude, speed: spd, heading: hdg } = loc.coords;
 
-      setPosition({ latitude, longitude });
-      setSpeed(spd ?? 0);
-      setHeading(hdg ?? 0);
+    setPosition({ latitude, longitude });
+    setSpeed(spd ?? 0);
+    setHeading(hdg ?? 0);
 
-      const now = Date.now();
+    const now = Date.now();
 
-      // Diffusion position backend (max 1x / 10 s)
-      if (now - lastBroadcastRef.current > 10_000) {
-        lastBroadcastRef.current = now;
-        chauffeursApi.updatePosition({
-          lat: latitude,
-          lng: longitude,
-          vitesse: spd ?? 0,
-          heading: hdg ?? 0,
-        }).catch(() => {});
-      }
+    if (now - lastBroadcastRef.current > 10_000) {
+      lastBroadcastRef.current = now;
+      chauffeursApi.updatePosition({
+        lat: latitude,
+        lng: longitude,
+        vitesse: spd ?? 0,
+        heading: hdg ?? 0,
+      }).catch(() => {});
+    }
 
-      // Géocodage inverse + annonce localité (max 1x / 20 s)
-      if (now - lastGeocodeRef.current > 20_000) {
-        lastGeocodeRef.current = now;
-        try {
-          const [res] = await Location.reverseGeocodeAsync({ latitude, longitude });
-          if (res) {
-            const locality =
-              res.district || res.city || res.subregion || res.region || null;
-            if (locality && locality !== lastLocalityRef.current) {
-              lastLocalityRef.current = locality;
-              setLocality(locality);
-              if (soundRef.current) announce(locality);
-            }
+    if (now - lastGeocodeRef.current > 20_000) {
+      lastGeocodeRef.current = now;
+      try {
+        const [res] = await Location.reverseGeocodeAsync({ latitude, longitude });
+        if (res) {
+          const locality = res.district || res.city || res.subregion || res.region || null;
+          if (locality && locality !== lastLocalityRef.current) {
+            lastLocalityRef.current = locality;
+            setLocality(locality);
+            if (soundRef.current) announce(locality);
           }
-        } catch {}
-      }
-
-      // Annonce approche destination (< 4 km)
-      if (voyage && !approachAnnouncedRef.current) {
-        const rem = haversineKm(latitude, longitude, voyage.lat_arrivee, voyage.lng_arrivee);
-        if (rem < 4) {
-          approachAnnouncedRef.current = true;
-          if (soundRef.current)
-            announce(`Vous approchez de votre destination : ${voyage.ville_arrivee}`);
         }
-      }
+      } catch {}
+    }
 
-      // Suivi caméra
-      if (following) {
-        mapRef.current?.animateCamera(
-          {
-            center: { latitude, longitude },
-            heading: hdg ?? 0,
-            zoom: 15,
-            pitch: 35,
-          },
-          { duration: 900 },
-        );
+    const v = voyageRef.current;
+    if (v && !approachAnnouncedRef.current) {
+      const rem = haversineKm(latitude, longitude, v.lat_arrivee, v.lng_arrivee);
+      if (rem < 4) {
+        approachAnnouncedRef.current = true;
+        if (soundRef.current)
+          announce(`Vous approchez de votre destination : ${v.ville_arrivee}`);
       }
-    },
-    [voyage, following],
-  );
+    }
 
-  // ── Démarrage GPS ──────────────────────────────────────────────────────────
+    if (followingRef.current) {
+      mapRef.current?.animateCamera(
+        { center: { latitude, longitude }, heading: hdg ?? 0, zoom: 15, pitch: 35 },
+        { duration: 900 },
+      );
+    }
+  }, []); // stable — utilise uniquement des refs
+
+  // ── Démarrage GPS — une seule fois au montage ──────────────────────────────
 
   useEffect(() => {
     let sub: Location.LocationSubscription | null = null;
+    let active = true;
 
     (async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") {
-        showToast("Permission GPS refusée — activez-la dans les paramètres", "error");
-        return;
-      }
-
-      // Position initiale immédiate
       try {
-        const init = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.High,
-        });
-        onLocationUpdate(init);
-      } catch {}
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (!active) return;
 
-      sub = await Location.watchPositionAsync(
-        {
-          accuracy: Location.Accuracy.BestForNavigation,
-          timeInterval: 2_000,
-          distanceInterval: 8,
-        },
-        onLocationUpdate,
-      );
+        if (status !== "granted") {
+          showToastRef.current(
+            "Permission GPS refusée — activez-la dans les paramètres",
+            "error",
+          );
+          return;
+        }
+
+        try {
+          const init = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.High,
+          });
+          if (active) onLocationUpdate(init);
+        } catch {}
+
+        if (!active) return;
+
+        sub = await Location.watchPositionAsync(
+          {
+            accuracy: Location.Accuracy.BestForNavigation,
+            timeInterval: 2_000,
+            distanceInterval: 8,
+          },
+          onLocationUpdate,
+        );
+      } catch {
+        if (active)
+          showToastRef.current("Erreur GPS — vérifiez les permissions", "error");
+      }
     })();
 
-    return () => { sub?.remove(); };
-  }, [onLocationUpdate]);
+    return () => {
+      active = false;
+      sub?.remove();
+    };
+  }, []); // onLocationUpdate est stable — une seule souscription pour toute la navigation
 
   // ── Fin de voyage ──────────────────────────────────────────────────────────
 
@@ -315,7 +318,7 @@ export default function NavigationScreen() {
           showsScale
           onPanDrag={() => setFollowing(false)}
         >
-          {/* Tracé */}
+          {/* Tracé complet */}
           <Polyline
             coordinates={[
               { latitude: voyage.lat_depart,  longitude: voyage.lng_depart  },
@@ -324,10 +327,9 @@ export default function NavigationScreen() {
             strokeColor={colors.primary}
             strokeWidth={5}
             geodesic
-            lineDashPattern={undefined}
           />
 
-          {/* Tracé "déjà parcouru" en gris */}
+          {/* Portion déjà parcourue */}
           {position && (
             <Polyline
               coordinates={[
@@ -358,15 +360,15 @@ export default function NavigationScreen() {
             <ArrMarker city={voyage.ville_arrivee} />
           </Marker>
 
-          {/* Véhicule */}
+          {/* Véhicule — tracksViewChanges=false évite les re-renders natifs continus */}
           {position && (
             <Marker
               coordinate={position}
               anchor={{ x: 0.5, y: 0.5 }}
               flat
-              tracksViewChanges
+              tracksViewChanges={false}
             >
-              <VehicleMarker heading={0} />
+              <VehicleMarker heading={heading} />
             </Marker>
           )}
         </MapView>
@@ -378,7 +380,6 @@ export default function NavigationScreen() {
           <Text style={styles.iconBtnText}>←</Text>
         </Pressable>
 
-        {/* Vitesse centrale */}
         <View style={styles.speedBubble}>
           <Text style={styles.speedValue}>{speedKmh}</Text>
           <Text style={styles.speedUnit}>km/h</Text>
@@ -393,9 +394,7 @@ export default function NavigationScreen() {
       {currentLocality && (
         <View style={styles.localityBanner}>
           <Text style={styles.localityIcon}>📍</Text>
-          <Text style={styles.localityText} numberOfLines={1}>
-            {currentLocality}
-          </Text>
+          <Text style={styles.localityText} numberOfLines={1}>{currentLocality}</Text>
         </View>
       )}
 
@@ -405,12 +404,10 @@ export default function NavigationScreen() {
           style={styles.recenterBtn}
           onPress={() => {
             setFollowing(true);
-            if (position) {
-              mapRef.current?.animateCamera(
-                { center: position, zoom: 15, pitch: 35 },
-                { duration: 600 },
-              );
-            }
+            mapRef.current?.animateCamera(
+              { center: position, zoom: 15, pitch: 35 },
+              { duration: 600 },
+            );
           }}
         >
           <Text style={styles.recenterText}>🎯 Recentrer</Text>
@@ -419,8 +416,6 @@ export default function NavigationScreen() {
 
       {/* ── HUD bas ── */}
       <View style={[styles.hud, { paddingBottom: insets.bottom + spacing.lg }]}>
-
-        {/* Itinéraire */}
         <View style={styles.hudHeader}>
           <Text style={styles.hudRoute} numberOfLines={1}>
             {voyage?.ville_depart} → {voyage?.ville_arrivee}
@@ -432,13 +427,10 @@ export default function NavigationScreen() {
           </View>
         </View>
 
-        {/* Stats */}
         <View style={styles.statsRow}>
           <View style={styles.statBlock}>
             <Text style={styles.statLabel}>Parcouru</Text>
-            <Text style={styles.statVal}>
-              {Math.round(totalKm - remainingKm)} km
-            </Text>
+            <Text style={styles.statVal}>{Math.round(totalKm - remainingKm)} km</Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statBlock}>
@@ -454,17 +446,10 @@ export default function NavigationScreen() {
           </View>
         </View>
 
-        {/* Barre de progression */}
         <View style={styles.progressTrack}>
-          <View
-            style={[
-              styles.progressFill,
-              { width: `${progressPct}%` as any },
-            ]}
-          />
+          <View style={[styles.progressFill, { width: `${progressPct}%` as any }]} />
         </View>
 
-        {/* Bouton terminer */}
         <Pressable
           style={[styles.endBtn, ending && { opacity: 0.7 }]}
           onPress={handleEnd}
@@ -484,7 +469,6 @@ export default function NavigationScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface },
 
-  // Barre haute
   topBar: {
     position: "absolute",
     top: 0,
@@ -532,7 +516,6 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
   },
 
-  // Localité courante
   localityBanner: {
     position: "absolute",
     top: 120,
@@ -554,7 +537,6 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
 
-  // Recentrer
   recenterBtn: {
     position: "absolute",
     right: spacing.xl,
@@ -571,7 +553,6 @@ const styles = StyleSheet.create({
     color: colors.primary,
   },
 
-  // HUD bas
   hud: {
     position: "absolute",
     bottom: 0,
@@ -628,7 +609,6 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
 
-  // Barre de progression
   progressTrack: {
     height: 8,
     backgroundColor: colors.border,
@@ -642,7 +622,6 @@ const styles = StyleSheet.create({
     minWidth: 8,
   },
 
-  // Bouton terminer
   endBtn: {
     backgroundColor: colors.error,
     borderRadius: radii.lg,

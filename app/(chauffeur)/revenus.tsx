@@ -9,7 +9,9 @@ import {
   Pressable,
 } from "react-native";
 import { router } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import { useChauffeurRevenus, useChauffeurStats } from "@/src/hooks/useChauffeur";
+import { useWallet } from "@/src/hooks/useWallet";
 import { formatFCFA } from "@/src/utils/formatters";
 import { colors, typography, spacing, radii, shadows } from "@/src/theme";
 
@@ -22,6 +24,7 @@ export default function RevenusScreen() {
   } = useChauffeurRevenus();
   const { data: stats, isLoading: statsLoading } = useChauffeurStats();
 
+  const { data: wallet } = useWallet();
   const isLoading = revLoading || statsLoading;
 
   return (
@@ -50,6 +53,26 @@ export default function RevenusScreen() {
             <Text style={styles.totalSub}>
               {stats?.nombre_trajets ?? 0} trajet{(stats?.nombre_trajets ?? 0) > 1 ? "s" : ""} effectué{(stats?.nombre_trajets ?? 0) > 1 ? "s" : ""}
             </Text>
+          </View>
+
+          {/* Solde wallet + bouton retrait */}
+          <View style={styles.walletCard}>
+            <View style={styles.walletLeft}>
+              <View style={styles.walletIconWrap}>
+                <Ionicons name="wallet" size={22} color={colors.success} />
+              </View>
+              <View style={styles.walletInfo}>
+                <Text style={styles.walletLabel}>Solde disponible</Text>
+                <Text style={styles.walletAmount}>{formatFCFA(wallet?.solde ?? 0)}</Text>
+              </View>
+            </View>
+            <Pressable
+              style={({ pressed }) => [styles.retraitBtn, pressed && { opacity: 0.82 }]}
+              onPress={() => router.push("/(chauffeur)/retrait" as any)}
+            >
+              <Ionicons name="arrow-up-circle" size={16} color={colors.white} />
+              <Text style={styles.retraitBtnTxt}>Retirer</Text>
+            </Pressable>
           </View>
 
           {/* Periods grid */}
@@ -176,6 +199,59 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.sm,
     fontFamily: typography.fontFamily.regular,
     color: "rgba(255,255,255,0.6)",
+  },
+
+  // Wallet card
+  walletCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginHorizontal: spacing["2xl"],
+    marginTop: -spacing.md,
+    marginBottom: spacing.md,
+    backgroundColor: colors.white,
+    borderRadius: radii.xl,
+    padding: spacing.xl,
+    borderWidth: 1,
+    borderColor: `${colors.success}25`,
+    ...shadows.sm,
+  },
+  walletLeft: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+  },
+  walletIconWrap: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: colors.successBg,
+    alignItems: "center", justifyContent: "center",
+  },
+  walletInfo: { gap: 2 },
+  walletLabel: {
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamily.medium,
+    color: colors.textMuted,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+  },
+  walletAmount: {
+    fontSize: typography.fontSize.xl,
+    fontFamily: typography.fontFamily.extraBold,
+    color: colors.success,
+  },
+  retraitBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    backgroundColor: colors.success,
+    borderRadius: radii.full,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+  },
+  retraitBtnTxt: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.bold,
+    color: colors.white,
   },
   periodsRow: {
     flexDirection: "row",

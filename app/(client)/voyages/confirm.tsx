@@ -41,7 +41,7 @@ export default function ConfirmScreen() {
     try {
       await createReservation({ voyage_id: voyage.id, nombre_places: places });
       showToast("Réservation envoyée ! En attente de confirmation du chauffeur.", "success");
-      router.replace("/(client)/voyages/mes-reservations" as any);
+      router.replace("/(client)/reservations" as any);
     } catch (e) {
       const code = getErrorCode(e);
       if (code === "PLACES_INSUFFISANTES" || getErrorMessage(e).includes("insuffisantes")) {
