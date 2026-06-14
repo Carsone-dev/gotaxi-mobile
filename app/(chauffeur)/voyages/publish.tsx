@@ -257,9 +257,6 @@ export default function PublishVoyageScreen() {
   // ── Date/heure ──
   const [showPicker, setShowPicker] = useState(false);
   const [androidStep, setAndroidStep] = useState<"date" | "time">("date");
-  const [showManual, setShowManual] = useState(false);
-  const [manualDate, setManualDate] = useState("");
-  const [manualTime, setManualTime] = useState("");
 
   // ── Sélecteurs modaux ──
   const [cityTarget, setCityTarget] = useState<"depart" | "arrivee" | null>(null);
@@ -288,13 +285,13 @@ export default function PublishVoyageScreen() {
   }, [vehiculeId]);
 
   // ── Date helpers ──
-  const syncManual = (d: Date) => {
-    setManualDate(format(d, "dd/MM/yyyy"));
-    setManualTime(format(d, "HH:mm"));
-  };
-
   const openDatePicker = () => {
     setAndroidStep("date");
+    setShowPicker(true);
+  };
+
+  const openTimePicker = () => {
+    setAndroidStep("time");
     setShowPicker(true);
   };
 
@@ -305,13 +302,10 @@ export default function PublishVoyageScreen() {
       const merged = new Date(selected);
       merged.setHours(departure.getHours(), departure.getMinutes(), 0, 0);
       setDeparture(merged);
-      setAndroidStep("time");
-      setShowPicker(true);
     } else {
       const merged = new Date(departure);
       merged.setHours(selected.getHours(), selected.getMinutes(), 0, 0);
       setDeparture(merged);
-      syncManual(merged);
     }
   };
 
@@ -319,30 +313,7 @@ export default function PublishVoyageScreen() {
     if (selected) setDeparture(selected);
   };
 
-  const confirmIos = () => {
-    setShowPicker(false);
-    syncManual(departure);
-  };
-
-  const handleManualDate = (text: string) => {
-    setManualDate(text);
-    if (/^\d{2}\/\d{2}\/\d{4}$/.test(text)) {
-      const [d, m, y] = text.split("/");
-      const t = format(departure, "HH:mm");
-      const parsed = new Date(`${y}-${m}-${d}T${t}:00`);
-      if (!isNaN(parsed.getTime())) setDeparture(parsed);
-    }
-  };
-
-  const handleManualTime = (text: string) => {
-    setManualTime(text);
-    if (/^\d{2}:\d{2}$/.test(text)) {
-      const [h, m] = text.split(":");
-      const merged = new Date(departure);
-      merged.setHours(Number(h), Number(m), 0, 0);
-      if (!isNaN(merged.getTime())) setDeparture(merged);
-    }
-  };
+  const confirmIos = () => setShowPicker(false);
 
   // ── Validation par étape ──
   const stepValid = (): boolean => {
@@ -517,19 +488,11 @@ export default function PublishVoyageScreen() {
               departure={departure}
               showPicker={showPicker}
               androidStep={androidStep}
-              showManual={showManual}
-              manualDate={manualDate}
-              manualTime={manualTime}
-              onOpenPicker={openDatePicker}
+              onOpenDatePicker={openDatePicker}
+              onOpenTimePicker={openTimePicker}
               onAndroidChange={handleAndroidChange}
               onIosChange={handleIosChange}
               onConfirmIos={confirmIos}
-              onToggleManual={() => {
-                if (!showManual) syncManual(departure);
-                setShowManual((v) => !v);
-              }}
-              onManualDate={handleManualDate}
-              onManualTime={handleManualTime}
             />
           )}
           {step === 3 && (
@@ -1098,30 +1061,20 @@ function StepDateHeure({
   departure,
   showPicker,
   androidStep,
-  showManual,
-  manualDate,
-  manualTime,
-  onOpenPicker,
+  onOpenDatePicker,
+  onOpenTimePicker,
   onAndroidChange,
   onIosChange,
   onConfirmIos,
-  onToggleManual,
-  onManualDate,
-  onManualTime,
 }: {
   departure: Date;
   showPicker: boolean;
   androidStep: "date" | "time";
-  showManual: boolean;
-  manualDate: string;
-  manualTime: string;
-  onOpenPicker: () => void;
+  onOpenDatePicker: () => void;
+  onOpenTimePicker: () => void;
   onAndroidChange: (e: DateTimePickerEvent, d?: Date) => void;
   onIosChange: (e: DateTimePickerEvent, d?: Date) => void;
   onConfirmIos: () => void;
-  onToggleManual: () => void;
-  onManualDate: (t: string) => void;
-  onManualTime: (t: string) => void;
 }) {
   const isPast = departure <= new Date();
 
@@ -1129,63 +1082,48 @@ function StepDateHeure({
     <View style={stepStyles.container}>
       <Text style={stepStyles.hint}>Quand démarre votre trajet ?</Text>
 
-      {/* Bouton date principale */}
-      <Pressable style={[dtStyles.card, isPast && dtStyles.cardError]} onPress={onOpenPicker}>
-        <View style={dtStyles.iconBox}>
-          <Text style={dtStyles.icon}>📅</Text>
-        </View>
-        <View style={dtStyles.textBlock}>
-          <Text style={dtStyles.labelTxt}>Date de départ</Text>
-          <Text style={dtStyles.dateTxt} numberOfLines={1}>
-            {format(departure, "EEEE d MMMM yyyy", { locale: fr })}
+      {/* ── Deux cards : Date | Heure ── */}
+      <View style={dtStyles.pickerRow}>
+
+        {/* Card Date */}
+        <Pressable style={dtStyles.dateCard} onPress={onOpenDatePicker}>
+          <Text style={dtStyles.cardLabel}>DATE</Text>
+          <Text style={dtStyles.dayName}>
+            {format(departure, "EEE", { locale: fr })}
           </Text>
-          <Text style={[dtStyles.timeTxt, isPast && dtStyles.timeError]}>
-            {format(departure, "HH:mm")}
+          <Text style={dtStyles.dayValue}>
+            {format(departure, "d")}
           </Text>
-        </View>
-        <Text style={dtStyles.editIcon}>✏️</Text>
-      </Pressable>
+          <Text style={dtStyles.monthYear}>
+            {format(departure, "MMM yyyy", { locale: fr })}
+          </Text>
+          <View style={dtStyles.editPill}>
+            <Text style={dtStyles.editPillTxt}>Changer ▼</Text>
+          </View>
+        </Pressable>
+
+        {/* Card Heure */}
+        <Pressable
+          style={[dtStyles.timeCard, isPast && dtStyles.timeCardError]}
+          onPress={onOpenTimePicker}
+        >
+          <Text style={[dtStyles.cardLabel, isPast && dtStyles.cardLabelError]}>HEURE</Text>
+          <Text style={[dtStyles.timeValue, isPast && dtStyles.timeValueError]}>
+            {format(departure, "HH")}
+          </Text>
+          <Text style={[dtStyles.timeSep, isPast && dtStyles.timeValueError]}>:</Text>
+          <Text style={[dtStyles.timeValue, isPast && dtStyles.timeValueError]}>
+            {format(departure, "mm")}
+          </Text>
+          <View style={[dtStyles.editPill, isPast && dtStyles.editPillError]}>
+            <Text style={[dtStyles.editPillTxt, isPast && dtStyles.editPillTxtError]}>Changer ▼</Text>
+          </View>
+        </Pressable>
+
+      </View>
 
       {isPast && (
         <Text style={stepStyles.errorNote}>La date de départ doit être dans le futur.</Text>
-      )}
-
-      {/* Saisie manuelle */}
-      <Pressable onPress={onToggleManual} style={dtStyles.manualToggle}>
-        <Text style={dtStyles.manualToggleTxt}>
-          {showManual ? "− Masquer la saisie manuelle" : "✏ Saisir manuellement"}
-        </Text>
-      </Pressable>
-
-      {showManual && (
-        <View style={dtStyles.manualRow}>
-          <View style={{ flex: 3, gap: spacing.xs }}>
-            <Text style={stepStyles.inputLabel}>Date (JJ/MM/AAAA)</Text>
-            <TextInput
-              style={dtStyles.input}
-              value={manualDate}
-              onChangeText={onManualDate}
-              placeholder="15/05/2026"
-              placeholderTextColor={colors.textMuted}
-              maxLength={10}
-              autoCorrect={false}
-              keyboardType="numeric"
-            />
-          </View>
-          <View style={{ flex: 2, gap: spacing.xs }}>
-            <Text style={stepStyles.inputLabel}>Heure (HH:MM)</Text>
-            <TextInput
-              style={dtStyles.input}
-              value={manualTime}
-              onChangeText={onManualTime}
-              placeholder="07:00"
-              placeholderTextColor={colors.textMuted}
-              maxLength={5}
-              autoCorrect={false}
-              keyboardType="numeric"
-            />
-          </View>
-        </View>
       )}
 
       {/* Android picker */}
@@ -1199,26 +1137,28 @@ function StepDateHeure({
         />
       )}
 
-      {/* iOS picker modal */}
+      {/* iOS picker — bottom sheet */}
       {Platform.OS === "ios" && (
         <Modal visible={showPicker} transparent animationType="slide">
           <View style={dtStyles.iosOverlay}>
             <View style={dtStyles.iosSheet}>
               <View style={dtStyles.iosHeader}>
-                <Pressable onPress={() => {}}>
+                <Pressable onPress={onConfirmIos}>
                   <Text style={dtStyles.iosCancel}>Annuler</Text>
                 </Pressable>
-                <Text style={dtStyles.iosTitle}>Date de départ</Text>
+                <Text style={dtStyles.iosTitle}>
+                  {androidStep === "date" ? "Date de départ" : "Heure de départ"}
+                </Text>
                 <Pressable onPress={onConfirmIos}>
                   <Text style={dtStyles.iosDone}>Confirmer</Text>
                 </Pressable>
               </View>
               <DateTimePicker
                 value={departure}
-                mode="datetime"
+                mode={androidStep}
                 display="spinner"
                 onChange={onIosChange}
-                minimumDate={new Date()}
+                minimumDate={androidStep === "date" ? new Date() : undefined}
                 locale="fr-FR"
                 style={{ width: "100%" }}
               />
@@ -1231,67 +1171,95 @@ function StepDateHeure({
 }
 
 const dtStyles = StyleSheet.create({
-  card: {
-    flexDirection: "row",
-    alignItems: "center",
+  pickerRow: { flexDirection: "row", gap: spacing.md },
+
+  // Card Date (plus large)
+  dateCard: {
+    flex: 3,
     backgroundColor: colors.white,
     borderRadius: radii.xl,
     padding: spacing.xl,
-    gap: spacing.lg,
+    alignItems: "center",
+    gap: spacing.xs,
     borderWidth: 2,
     borderColor: colors.primary,
     ...shadows.sm,
   },
-  cardError: { borderColor: colors.error },
-  iconBox: {
-    width: 52,
-    height: 52,
-    borderRadius: radii.lg,
-    backgroundColor: `${colors.primary}15`,
+  // Card Heure
+  timeCard: {
+    flex: 2,
+    backgroundColor: colors.white,
+    borderRadius: radii.xl,
+    padding: spacing.xl,
     alignItems: "center",
-    justifyContent: "center",
+    gap: spacing.xs,
+    borderWidth: 2,
+    borderColor: colors.primary,
+    ...shadows.sm,
   },
-  icon: { fontSize: 26 },
-  textBlock: { flex: 1, gap: 2 },
-  labelTxt: {
+  timeCardError: { borderColor: colors.error },
+
+  // Textes communs
+  cardLabel: {
     fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamily.bold,
+    color: colors.primary,
+    textTransform: "uppercase",
+    letterSpacing: 1.2,
+  },
+  cardLabelError: { color: colors.error },
+
+  // Date card textes
+  dayName: {
+    fontSize: typography.fontSize.sm,
     fontFamily: typography.fontFamily.medium,
     color: colors.textMuted,
-    textTransform: "uppercase",
-    letterSpacing: 0.8,
+    textTransform: "capitalize",
+    marginTop: spacing.sm,
   },
-  dateTxt: {
-    fontSize: typography.fontSize.base,
-    fontFamily: typography.fontFamily.semiBold,
+  dayValue: {
+    fontSize: typography.fontSize["5xl"],
+    fontFamily: typography.fontFamily.extraBold,
     color: colors.textPrimary,
+    lineHeight: 48,
+  },
+  monthYear: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.semiBold,
+    color: colors.textSecondary,
     textTransform: "capitalize",
   },
-  timeTxt: {
+
+  // Heure card textes
+  timeValue: {
     fontSize: typography.fontSize["3xl"],
     fontFamily: typography.fontFamily.extraBold,
     color: colors.primary,
+    lineHeight: 34,
   },
-  timeError: { color: colors.error },
-  editIcon: { fontSize: 18 },
-  manualToggle: { alignSelf: "flex-start" },
-  manualToggleTxt: {
-    fontSize: typography.fontSize.sm,
-    fontFamily: typography.fontFamily.medium,
+  timeSep: {
+    fontSize: typography.fontSize.xl,
+    fontFamily: typography.fontFamily.bold,
     color: colors.primary,
-    textDecorationLine: "underline",
+    lineHeight: 20,
   },
-  manualRow: { flexDirection: "row", gap: spacing.md },
-  input: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radii.md,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    fontSize: typography.fontSize.base,
-    fontFamily: typography.fontFamily.regular,
-    color: colors.textPrimary,
-    backgroundColor: colors.white,
+  timeValueError: { color: colors.error },
+
+  // Pill "Changer"
+  editPill: {
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 4,
+    backgroundColor: `${colors.primary}15`,
+    borderRadius: radii.full ?? 999,
   },
+  editPillError: { backgroundColor: `${colors.error}15` },
+  editPillTxt: {
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamily.semiBold,
+    color: colors.primary,
+  },
+  editPillTxtError: { color: colors.error },
   iosOverlay: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.4)" },
   iosSheet: {
     backgroundColor: colors.white,
