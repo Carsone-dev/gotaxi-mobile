@@ -1,41 +1,292 @@
-import React from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   Pressable,
   ActivityIndicator,
-  RefreshControl,
+  Image,
+  FlatList,
+  TextInput,
 } from "react-native";
 import { router } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuthStore } from "@/src/stores/authStore";
-import { useChauffeurStats, useChauffeurRevenus, useGoOnline, useGoOffline } from "@/src/hooks/useChauffeur";
+import {
+  useChauffeurStats,
+  useChauffeurRevenus,
+  useMyChauffeurProfile,
+  useGoOnline,
+  useGoOffline,
+} from "@/src/hooks/useChauffeur";
+import { getErrorCode, getErrorMessage } from "@/src/utils/error-handler";
 import { useIncomingReservations } from "@/src/hooks/useReservations";
 import { useMyVoyages } from "@/src/hooks/useVoyages";
 import { formatFCFA } from "@/src/utils/formatters";
-import { getErrorMessage } from "@/src/utils/error-handler";
 import { useToast } from "@/src/components/common/Toast";
 import { colors, typography, spacing, radii, shadows } from "@/src/theme";
+import type { Voyage, VoyageStatus } from "@/src/api/types";
 
+type DateFilter = "all" | "today" | "week" | "month";
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function getGreeting() {
+  const h = new Date().getHours();
+  if (h >= 5 && h < 12) return "Bonjour";
+  if (h >= 12 && h < 18) return "Bon après-midi";
+  return "Bonsoir";
+}
+
+function formatVoyageDate(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleDateString("fr-BJ", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+const STATUS_CFG: Record<VoyageStatus, { label: string; bg: string; text: string }> = {
+  PUBLIE:   { label: "Publié",   bg: `${colors.primary}15`, text: colors.primary },
+  COMPLET:  { label: "Complet",  bg: "#fff3e0",             text: "#e65100" },
+  EN_COURS: { label: "En cours", bg: "#e8f5e9",             text: "#2e7d32" },
+  TERMINE:  { label: "Terminé",  bg: colors.surface,        text: colors.textMuted },
+  ANNULE:   { label: "Annulé",   bg: `${colors.error}10`,   text: colors.error },
+};
+
+// ── Bouton action rapide ──────────────────────────────────────────────────────
+function QuickBtn({
+  icon, label, iconBg, iconColor, badge, onPress,
+}: {
+  icon: React.ComponentProps<typeof Ionicons>["name"];
+  label: string;
+  iconBg: string;
+  iconColor: string;
+  badge?: number;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable style={({ pressed }) => [qb.btn, pressed && { opacity: 0.72 }]} onPress={onPress}>
+      <View style={[qb.iconBox, { backgroundColor: iconBg }]}>
+        <Ionicons name={icon} size={21} color={iconColor} />
+        {badge != null && badge > 0 && (
+          <View style={qb.badge}>
+            <Text style={qb.badgeText}>{badge > 9 ? "9+" : badge}</Text>
+          </View>
+        )}
+      </View>
+      <Text style={qb.label} numberOfLines={1}>{label}</Text>
+    </Pressable>
+  );
+}
+
+const qb = StyleSheet.create({
+  btn: { flex: 1, alignItems: "center", gap: 5 },
+  iconBox: {
+    width: 48,
+    height: 48,
+    borderRadius: radii.xl,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  badge: {
+    position: "absolute",
+    top: -3,
+    right: -3,
+    backgroundColor: colors.error,
+    minWidth: 17,
+    height: 17,
+    borderRadius: 9,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 3,
+    borderWidth: 1.5,
+    borderColor: colors.white,
+  },
+  badgeText: {
+    fontSize: 9,
+    fontFamily: typography.fontFamily.bold,
+    color: colors.white,
+  },
+  label: {
+    fontSize: 10,
+    fontFamily: typography.fontFamily.semiBold,
+    color: colors.textSecondary,
+    textAlign: "center",
+  },
+});
+
+// ── Filtre chip ───────────────────────────────────────────────────────────────
+function FilterChip({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
+  return (
+    <Pressable onPress={onPress} style={[fc.chip, active && fc.chipActive]}>
+      <Text style={[fc.label, active && fc.labelActive]}>{label}</Text>
+    </Pressable>
+  );
+}
+
+const fc = StyleSheet.create({
+  chip: {
+    paddingHorizontal: 13,
+    paddingVertical: 5,
+    borderRadius: radii.full,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  chipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  label: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.medium,
+    color: colors.textSecondary,
+  },
+  labelActive: { color: colors.white, fontFamily: typography.fontFamily.semiBold },
+});
+
+// ── Carte voyage ──────────────────────────────────────────────────────────────
+function VoyageCard({ voyage }: { voyage: Voyage }) {
+  const cfg = STATUS_CFG[voyage.statut];
+  const passagers = voyage.nombre_places_total - voyage.nombre_places_restantes;
+  const gain = voyage.prix_par_place * passagers;
+
+  return (
+    <Pressable
+      style={({ pressed }) => [vc.card, pressed && { opacity: 0.85 }]}
+      onPress={() => router.push(`/(chauffeur)/voyages/${voyage.id}` as any)}
+    >
+      <View style={vc.top}>
+        <Text style={vc.route} numberOfLines={1}>
+          {voyage.ville_depart} → {voyage.ville_arrivee}
+        </Text>
+        <View style={[vc.badge, { backgroundColor: cfg.bg }]}>
+          <Text style={[vc.badgeText, { color: cfg.text }]}>{cfg.label}</Text>
+        </View>
+      </View>
+      <Text style={vc.date}>{formatVoyageDate(voyage.date_depart)}</Text>
+      <View style={vc.footer}>
+        <Text style={vc.meta}>
+          👤 {passagers}/{voyage.nombre_places_total} passager{passagers > 1 ? "s" : ""}
+        </Text>
+        {gain > 0 && <Text style={vc.gain}>{formatFCFA(gain)}</Text>}
+      </View>
+    </Pressable>
+  );
+}
+
+const vc = StyleSheet.create({
+  card: {
+    backgroundColor: colors.white,
+    borderRadius: radii.xl,
+    padding: spacing.lg,
+    marginHorizontal: spacing["2xl"],
+    marginBottom: spacing.sm,
+    gap: 4,
+    ...shadows.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  top: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  route: {
+    flex: 1,
+    fontSize: typography.fontSize.base,
+    fontFamily: typography.fontFamily.semiBold,
+    color: colors.textPrimary,
+  },
+  badge: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: radii.full,
+  },
+  badgeText: { fontSize: 10, fontFamily: typography.fontFamily.bold },
+  date: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.regular,
+    color: colors.textMuted,
+  },
+  footer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 2,
+  },
+  meta: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.regular,
+    color: colors.textSecondary,
+  },
+  gain: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.bold,
+    color: "#2e7d32",
+  },
+});
+
+// ── Écran ─────────────────────────────────────────────────────────────────────
 export default function DashboardScreen() {
+  const insets = useSafeAreaInsets();
   const user = useAuthStore((s) => s.user);
   const { showToast } = useToast();
 
-  const { data: stats, isLoading: statsLoading, refetch: refetchStats, isRefetching } = useChauffeurStats();
+  const { data: chauffeur } = useMyChauffeurProfile();
+  const { data: stats, isLoading: statsLoading } = useChauffeurStats();
+  const kycValide = chauffeur?.kyc_valide ?? false;
   const { data: revenus } = useChauffeurRevenus();
   const { data: incoming } = useIncomingReservations();
   const { data: mesVoyages } = useMyVoyages();
   const { mutateAsync: goOnline, isPending: goingOnline } = useGoOnline();
   const { mutateAsync: goOffline, isPending: goingOffline } = useGoOffline();
 
+  const [filterDate, setFilterDate] = useState<DateFilter>("all");
+  const [filterRoute, setFilterRoute] = useState("");
+
   const isOnline = stats?.en_ligne ?? false;
   const pendingCount = incoming?.length ?? 0;
   const voyagesColisActifs = (mesVoyages ?? []).filter(
-    (v) => v.accepte_colis && (v.statut === "PUBLIE" || v.statut === "COMPLET" || v.statut === "EN_COURS"),
+    (v) =>
+      v.accepte_colis &&
+      (v.statut === "PUBLIE" || v.statut === "COMPLET" || v.statut === "EN_COURS")
   ).length;
 
+  const greeting = useMemo(() => getGreeting(), []);
+  const photoUrl = user?.photo_url ?? null;
+  const initials = `${user?.prenom?.[0] ?? ""}${user?.nom?.[0] ?? ""}`.toUpperCase();
+
+  const filteredVoyages = useMemo(() => {
+    let result = [...(mesVoyages ?? [])];
+
+    if (filterDate !== "all") {
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      let cutoff: Date;
+      if (filterDate === "today") cutoff = today;
+      else if (filterDate === "week") cutoff = new Date(today.getTime() - 6 * 24 * 60 * 60 * 1000);
+      else cutoff = new Date(now.getFullYear(), now.getMonth(), 1);
+      result = result.filter((v) => new Date(v.date_depart) >= cutoff);
+    }
+
+    if (filterRoute.trim()) {
+      const q = filterRoute.toLowerCase().trim();
+      result = result.filter(
+        (v) =>
+          v.ville_depart.toLowerCase().includes(q) ||
+          v.ville_arrivee.toLowerCase().includes(q)
+      );
+    }
+
+    return result.sort(
+      (a, b) => new Date(b.date_depart).getTime() - new Date(a.date_depart).getTime()
+    );
+  }, [mesVoyages, filterDate, filterRoute]);
+
   const handleToggleOnline = async () => {
+    if (!kycValide) {
+      showToast("KYC non validé — envoyez vos documents dans Paramètres", "error");
+      return;
+    }
     try {
       if (isOnline) {
         await goOffline();
@@ -45,336 +296,500 @@ export default function DashboardScreen() {
         showToast("Vous êtes maintenant en ligne", "success");
       }
     } catch (e) {
-      showToast(getErrorMessage(e), "error");
+      if (getErrorCode(e) === "KYC_NOT_VALIDATED") {
+        showToast("KYC non validé — contactez le support GoTaxi", "error");
+      } else {
+        showToast(getErrorMessage(e), "error");
+      }
     }
   };
 
+  const toggling = goingOnline || goingOffline;
+
+  const renderVoyage = useCallback(({ item }: { item: Voyage }) => (
+    <VoyageCard voyage={item} />
+  ), []);
+
+  const keyExtractor = useCallback((item: Voyage) => item.id, []);
+
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      refreshControl={
-        <RefreshControl refreshing={isRefetching} onRefresh={refetchStats} tintColor={colors.primary} />
-      }
-    >
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.greeting}>Tableau de bord</Text>
-          <Text style={styles.name}>{user?.prenom} {user?.nom} 🚗</Text>
+    <View style={styles.root}>
+      {/* ══════════════════ HERO ══════════════════ */}
+      <View style={[styles.hero, { paddingTop: insets.top + 18 }]}>
+        <View style={styles.deco1} />
+        <View style={styles.deco2} />
+
+        <View style={styles.topRow}>
+          <View style={styles.avatarRing}>
+            {photoUrl ? (
+              <Image source={{ uri: photoUrl }} style={styles.avatarImg} resizeMode="cover" />
+            ) : (
+              <View style={styles.avatarFallback}>
+                <Text style={styles.avatarText}>{initials}</Text>
+              </View>
+            )}
+            <View style={[styles.onlineDot, isOnline && kycValide ? styles.dotOn : styles.dotOff]} />
+          </View>
+
+          <View style={styles.greetingCol}>
+            <Text style={styles.greetingText}>{greeting} 👋</Text>
+            <Text style={styles.heroName} numberOfLines={1}>
+              {user?.prenom} {user?.nom}
+            </Text>
+          </View>
+
+          <Pressable
+            onPress={handleToggleOnline}
+            disabled={toggling}
+            style={[
+              styles.toggle,
+              !kycValide ? styles.toggleKyc : isOnline ? styles.toggleOn : styles.toggleOff,
+            ]}
+          >
+            {toggling ? (
+              <ActivityIndicator size="small" color={isOnline && kycValide ? colors.white : colors.textMuted} />
+            ) : (
+              <Text
+                style={[
+                  styles.toggleText,
+                  isOnline && kycValide && styles.toggleTextOn,
+                  !kycValide && styles.toggleTextKyc,
+                ]}
+              >
+                {!kycValide ? "⚠ KYC" : isOnline ? "● En ligne" : "○ Hors ligne"}
+              </Text>
+            )}
+          </Pressable>
         </View>
-        <Pressable
-          onPress={handleToggleOnline}
-          disabled={goingOnline || goingOffline}
-          style={[styles.onlineToggle, isOnline ? styles.onlineActive : styles.onlineInactive]}
-        >
-          {goingOnline || goingOffline ? (
-            <ActivityIndicator size="small" color={isOnline ? colors.white : colors.textSecondary} />
+
+        <View style={styles.revenueBlock}>
+          <Text style={styles.revenueEyebrow}>REVENUS AUJOURD'HUI</Text>
+          {statsLoading ? (
+            <ActivityIndicator color={colors.white} size="large" style={{ marginVertical: 6 }} />
           ) : (
-            <Text style={[styles.onlineLabel, isOnline && styles.onlineLabelActive]}>
-              {isOnline ? "En ligne" : "Hors ligne"}
-            </Text>
+            <Text style={styles.revenueAmount}>{formatFCFA(revenus?.aujourd_hui ?? 0)}</Text>
           )}
-        </Pressable>
-      </View>
+        </View>
 
-      <View style={styles.revenueCard}>
-        <Text style={styles.revenueLabel}>Revenus du jour</Text>
-        {statsLoading ? (
-          <ActivityIndicator color={colors.white} />
-        ) : (
-          <Text style={styles.revenueAmount}>{formatFCFA(revenus?.aujourd_hui ?? 0)}</Text>
-        )}
-        <View style={styles.statsRow}>
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>{stats?.nombre_trajets ?? 0}</Text>
-            <Text style={styles.statLabel}>Courses</Text>
+        <View style={styles.statsStrip}>
+          <View style={styles.statCell}>
+            <Text style={styles.statVal}>{stats?.nombre_trajets ?? 0}</Text>
+            <Text style={styles.statLbl}>Courses</Text>
           </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>{formatFCFA(revenus?.mois ?? 0)}</Text>
-            <Text style={styles.statLabel}>Ce mois</Text>
+          <View style={styles.statSep} />
+          <View style={styles.statCell}>
+            <Text style={styles.statVal}>{formatFCFA(revenus?.mois ?? 0)}</Text>
+            <Text style={styles.statLbl}>Ce mois</Text>
           </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>
-              {stats?.note_moyenne ? stats.note_moyenne.toFixed(1) : "-"}
+          <View style={styles.statSep} />
+          <View style={styles.statCell}>
+            <Text style={[styles.statVal, { color: colors.yellow }]}>
+              ⭐ {stats?.note_moyenne ? stats.note_moyenne.toFixed(1) : "—"}
             </Text>
-            <Text style={styles.statLabel}>Note ⭐</Text>
+            <Text style={styles.statLbl}>Note</Text>
           </View>
         </View>
       </View>
 
-      {pendingCount > 0 && (
-        <Pressable
-          style={styles.alertCard}
-          onPress={() => router.push("/(chauffeur)/reservations" as any)}
-        >
-          <Text style={styles.alertIcon}>🔔</Text>
-          <View style={styles.alertInfo}>
-            <Text style={styles.alertTitle}>
+      {/* ══════════════ ALERTES + ACTIONS (fixées) ══════════════ */}
+      <View style={styles.fixedSection}>
+        {!kycValide && (
+          <Pressable
+            style={[styles.alert, styles.alertWarn]}
+            onPress={() => router.push("/(chauffeur)/settings" as any)}
+          >
+            <Ionicons name="warning-outline" size={15} color={colors.warningText} />
+            <Text style={[styles.alertText, { color: colors.warningText }]} numberOfLines={1}>
+              KYC en attente — envoyez vos documents
+            </Text>
+            <Ionicons name="chevron-forward" size={13} color={colors.warningText} />
+          </Pressable>
+        )}
+
+        {pendingCount > 0 && (
+          <Pressable
+            style={[styles.alert, styles.alertErr]}
+            onPress={() => router.push("/(chauffeur)/reservations" as any)}
+          >
+            <View style={styles.alertBadge}>
+              <Text style={styles.alertBadgeText}>{pendingCount}</Text>
+            </View>
+            <Text style={[styles.alertText, { color: colors.error, flex: 1 }]} numberOfLines={1}>
               {pendingCount} réservation{pendingCount > 1 ? "s" : ""} en attente
             </Text>
-            <Text style={styles.alertSub}>Appuyez pour voir et accepter</Text>
-          </View>
-          <Text style={styles.alertArrow}>›</Text>
-        </Pressable>
-      )}
+            <Ionicons name="chevron-forward" size={13} color={colors.error} />
+          </Pressable>
+        )}
 
-      {voyagesColisActifs > 0 && (
-        <Pressable
-          style={styles.colisAlertCard}
-          onPress={() => router.push("/(chauffeur)/colis" as any)}
-        >
-          <Text style={styles.alertIcon}>📦</Text>
-          <View style={styles.alertInfo}>
-            <Text style={styles.colisAlertTitle}>
-              {voyagesColisActifs} trajet{voyagesColisActifs > 1 ? "s" : ""} avec livraisons actives
-            </Text>
-            <Text style={styles.colisAlertSub}>Gérez vos colis à confirmer et livrer</Text>
-          </View>
-          <Text style={styles.colisAlertArrow}>›</Text>
-        </Pressable>
-      )}
+        <View style={styles.actionsBar}>
+          <QuickBtn
+            icon="add-circle"
+            label="Publier"
+            iconBg={`${colors.primary}18`}
+            iconColor={colors.primary}
+            onPress={() => router.push("/(chauffeur)/voyages/publish" as any)}
+          />
+          <QuickBtn
+            icon="calendar-clear"
+            label="Réservations"
+            iconBg={pendingCount > 0 ? `${colors.error}15` : "#1a1a2e15"}
+            iconColor={pendingCount > 0 ? colors.error : "#1a1a2e"}
+            badge={pendingCount > 0 ? pendingCount : undefined}
+            onPress={() => router.push("/(chauffeur)/reservations" as any)}
+          />
+          <QuickBtn
+            icon="cube"
+            label="Colis"
+            iconBg={voyagesColisActifs > 0 ? `${colors.primary}18` : colors.surface}
+            iconColor={voyagesColisActifs > 0 ? colors.primary : colors.textSecondary}
+            badge={voyagesColisActifs > 0 ? voyagesColisActifs : undefined}
+            onPress={() => router.push("/(chauffeur)/colis" as any)}
+          />
+          <QuickBtn
+            icon="wallet"
+            label="Revenus"
+            iconBg="#e8f5e9"
+            iconColor="#2e7d32"
+            onPress={() => router.push("/(chauffeur)/revenus" as any)}
+          />
+        </View>
+      </View>
 
-      <Text style={styles.sectionTitle}>Actions rapides</Text>
-      <View style={styles.quickActions}>
-        <Pressable
-          style={[styles.qaCard, { backgroundColor: colors.primary }]}
-          onPress={() => router.push("/(chauffeur)/voyages/publish" as any)}
-        >
-          <Text style={styles.qaIcon}>🗺️</Text>
-          <Text style={styles.qaLabel}>Publier un trajet</Text>
-          <Text style={styles.qaDesc}>Nouveau départ</Text>
-        </Pressable>
-        <Pressable
-          style={[styles.qaCard, { backgroundColor: colors.black }]}
-          onPress={() => router.push("/(chauffeur)/reservations" as any)}
-        >
-          <Text style={styles.qaIcon}>📋</Text>
-          <Text style={styles.qaLabel}>Réservations</Text>
-          {pendingCount > 0 && (
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>{pendingCount}</Text>
+      {/* ══════════════════ HISTORIQUE ══════════════════ */}
+      <FlatList
+        style={styles.list}
+        data={filteredVoyages}
+        renderItem={renderVoyage}
+        keyExtractor={keyExtractor}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.listContent}
+        ListHeaderComponent={
+          <View>
+            {/* Filtres */}
+            <View style={styles.filtersWrap}>
+              <View style={styles.chipRow}>
+                {(["all", "today", "week", "month"] as const).map((d) => (
+                  <FilterChip
+                    key={d}
+                    label={
+                      d === "all" ? "Tous" :
+                      d === "today" ? "Auj." :
+                      d === "week" ? "Semaine" : "Mois"
+                    }
+                    active={filterDate === d}
+                    onPress={() => setFilterDate(d)}
+                  />
+                ))}
+              </View>
+              <View style={styles.searchBox}>
+                <Ionicons name="search-outline" size={15} color={colors.textMuted} />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Filtrer par ville..."
+                  placeholderTextColor={colors.textMuted}
+                  value={filterRoute}
+                  onChangeText={setFilterRoute}
+                  returnKeyType="search"
+                />
+                {filterRoute.length > 0 && (
+                  <Pressable onPress={() => setFilterRoute("")}>
+                    <Ionicons name="close-circle" size={16} color={colors.textMuted} />
+                  </Pressable>
+                )}
+              </View>
             </View>
-          )}
-        </Pressable>
-      </View>
-      <View style={[styles.quickActions, { marginTop: spacing.md }]}>
-        <Pressable
-          style={[styles.qaCard, styles.qaCardColis]}
-          onPress={() => router.push("/(chauffeur)/colis" as any)}
-        >
-          <Text style={styles.qaIcon}>📦</Text>
-          <Text style={styles.qaLabelDark}>Mes Colis</Text>
-          <Text style={styles.qaDescDark}>Confirmer · Transiter · Livrer</Text>
-        </Pressable>
-        <Pressable
-          style={[styles.qaCard, styles.qaCardRevenus]}
-          onPress={() => router.push("/(chauffeur)/revenus" as any)}
-        >
-          <Text style={styles.qaIcon}>💰</Text>
-          <Text style={styles.qaLabel}>Revenus</Text>
-          <Text style={styles.qaDesc}>Historique & stats</Text>
-        </Pressable>
-      </View>
-    </ScrollView>
+
+            {/* Titre section */}
+            <View style={styles.historyHeader}>
+              <Text style={styles.historyTitle}>Historique des voyages</Text>
+              <Text style={styles.historyCount}>
+                {filteredVoyages.length} voyage{filteredVoyages.length !== 1 ? "s" : ""}
+              </Text>
+            </View>
+          </View>
+        }
+        ListEmptyComponent={
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyIcon}>🚗</Text>
+            <Text style={styles.emptyText}>Aucun voyage trouvé</Text>
+            {(filterDate !== "all" || filterRoute.length > 0) && (
+              <Pressable
+                style={styles.clearBtn}
+                onPress={() => { setFilterDate("all"); setFilterRoute(""); }}
+              >
+                <Text style={styles.clearBtnText}>Effacer les filtres</Text>
+              </Pressable>
+            )}
+          </View>
+        }
+      />
+    </View>
   );
 }
 
+// ── Styles ────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.surface },
-  content: { paddingBottom: 32 },
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
+  root: { flex: 1, backgroundColor: colors.surface },
+
+  /* ── Hero ── */
+  hero: {
+    backgroundColor: colors.primary,
     paddingHorizontal: spacing["2xl"],
-    paddingTop: 56,
-    paddingBottom: spacing.xl,
-    backgroundColor: colors.white,
+    paddingBottom: 0,
+    overflow: "hidden",
   },
-  greeting: {
-    fontSize: typography.fontSize.sm,
-    fontFamily: typography.fontFamily.regular,
-    color: colors.textSecondary,
+  deco1: {
+    position: "absolute",
+    width: 220,
+    height: 220,
+    borderRadius: 110,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    top: -70,
+    right: -50,
   },
-  name: {
-    fontSize: typography.fontSize.xl,
-    fontFamily: typography.fontFamily.bold,
-    color: colors.textPrimary,
+  deco2: {
+    position: "absolute",
+    width: 130,
+    height: 130,
+    borderRadius: 65,
+    backgroundColor: "rgba(255,255,255,0.05)",
+    bottom: 40,
+    left: -40,
   },
-  onlineToggle: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: radii.full,
-    minWidth: 90,
+  topRow: {
+    flexDirection: "row",
     alignItems: "center",
-    minHeight: 32,
+    gap: spacing.md,
+    marginBottom: spacing.xl,
+  },
+  avatarRing: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    borderWidth: 2,
+    borderColor: "rgba(255,255,255,0.4)",
+    overflow: "hidden",
+  },
+  avatarImg: { width: "100%", height: "100%" },
+  avatarFallback: {
+    flex: 1,
+    backgroundColor: "rgba(255,255,255,0.2)",
+    alignItems: "center",
     justifyContent: "center",
   },
-  onlineActive: { backgroundColor: colors.primary },
-  onlineInactive: { backgroundColor: colors.border },
-  onlineLabel: {
-    fontSize: typography.fontSize.sm,
-    fontFamily: typography.fontFamily.semiBold,
-    color: colors.textSecondary,
-  },
-  onlineLabelActive: { color: colors.white },
-  revenueCard: {
-    margin: spacing["2xl"],
-    backgroundColor: colors.black,
-    borderRadius: radii.xl,
-    padding: spacing["2xl"],
-    gap: spacing.sm,
-    ...shadows.lg,
-  },
-  revenueLabel: {
-    fontSize: typography.fontSize.sm,
-    fontFamily: typography.fontFamily.medium,
-    color: "rgba(255,255,255,0.6)",
-    textTransform: "uppercase",
-    letterSpacing: 1,
-  },
-  revenueAmount: {
-    fontSize: typography.fontSize["5xl"],
-    fontFamily: typography.fontFamily.extraBold,
-    color: colors.white,
-  },
-  statsRow: {
-    flexDirection: "row",
-    marginTop: spacing.md,
-    backgroundColor: "rgba(255,255,255,0.1)",
-    borderRadius: radii.md,
-    padding: spacing.md,
-  },
-  statItem: { flex: 1, alignItems: "center", gap: 2 },
-  statDivider: { width: 1, backgroundColor: "rgba(255,255,255,0.2)" },
-  statValue: {
-    fontSize: typography.fontSize.base,
-    fontFamily: typography.fontFamily.bold,
-    color: colors.white,
-  },
-  statLabel: {
-    fontSize: typography.fontSize.xs,
-    fontFamily: typography.fontFamily.regular,
-    color: "rgba(255,255,255,0.6)",
-  },
-  alertCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: colors.warningBg,
-    marginHorizontal: spacing["2xl"],
-    borderRadius: radii.lg,
-    padding: spacing.xl,
-    gap: spacing.md,
-    marginBottom: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.warning,
-  },
-  alertIcon: { fontSize: 24 },
-  alertInfo: { flex: 1 },
-  alertTitle: {
-    fontSize: typography.fontSize.base,
-    fontFamily: typography.fontFamily.bold,
-    color: colors.warningText,
-  },
-  alertSub: {
-    fontSize: typography.fontSize.sm,
-    fontFamily: typography.fontFamily.regular,
-    color: colors.warningText,
-  },
-  alertArrow: {
-    fontSize: typography.fontSize["2xl"],
-    color: colors.warningText,
-  },
-  colisAlertCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: colors.successBg,
-    marginHorizontal: spacing["2xl"],
-    borderRadius: radii.lg,
-    padding: spacing.xl,
-    gap: spacing.md,
-    marginBottom: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.primary,
-  },
-  colisAlertTitle: {
-    fontSize: typography.fontSize.base,
-    fontFamily: typography.fontFamily.bold,
-    color: colors.primary,
-  },
-  colisAlertSub: {
-    fontSize: typography.fontSize.sm,
-    fontFamily: typography.fontFamily.regular,
-    color: colors.primary,
-  },
-  colisAlertArrow: {
-    fontSize: typography.fontSize["2xl"],
-    color: colors.primary,
-  },
-  sectionTitle: {
+  avatarText: {
     fontSize: typography.fontSize.lg,
     fontFamily: typography.fontFamily.bold,
-    color: colors.textPrimary,
-    paddingHorizontal: spacing["2xl"],
-    marginBottom: spacing.md,
+    color: colors.white,
   },
-  quickActions: {
-    flexDirection: "row",
-    paddingHorizontal: spacing["2xl"],
-    gap: spacing.md,
-  },
-  qaCard: {
-    flex: 1,
-    borderRadius: radii.xl,
-    padding: spacing.xl,
-    gap: spacing.xs,
-    ...shadows.md,
-  },
-  qaCardColis: {
-    backgroundColor: colors.surface,
-    borderWidth: 1.5,
+  onlineDot: {
+    position: "absolute",
+    bottom: 1,
+    right: 1,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    borderWidth: 2,
     borderColor: colors.primary,
   },
-  qaCardRevenus: {
-    backgroundColor: "#1a1a2e",
+  dotOn: { backgroundColor: colors.yellow },
+  dotOff: { backgroundColor: "rgba(255,255,255,0.3)" },
+  greetingCol: { flex: 1 },
+  greetingText: {
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamily.regular,
+    color: "rgba(255,255,255,0.75)",
   },
-  qaIcon: { fontSize: 32 },
-  qaLabel: {
-    fontSize: typography.fontSize.base,
+  heroName: {
+    fontSize: typography.fontSize.lg,
+    fontFamily: typography.fontFamily.bold,
+    color: colors.white,
+    lineHeight: 22,
+  },
+  toggle: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 7,
+    borderRadius: radii.full,
+    minWidth: 94,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  toggleOn: { backgroundColor: "rgba(255,255,255,0.22)" },
+  toggleOff: { backgroundColor: "rgba(0,0,0,0.20)" },
+  toggleKyc: { backgroundColor: colors.warningBg },
+  toggleText: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.semiBold,
+    color: "rgba(255,255,255,0.75)",
+  },
+  toggleTextOn: { color: colors.white },
+  toggleTextKyc: { color: colors.warningText },
+  revenueBlock: {
+    alignItems: "center",
+    paddingVertical: spacing.lg,
+  },
+  revenueEyebrow: {
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamily.medium,
+    color: "rgba(255,255,255,0.65)",
+    letterSpacing: 1.5,
+    textTransform: "uppercase",
+    marginBottom: 4,
+  },
+  revenueAmount: {
+    fontSize: 42,
+    fontFamily: typography.fontFamily.extraBold,
+    color: colors.white,
+    letterSpacing: -1,
+  },
+  statsStrip: {
+    flexDirection: "row",
+    backgroundColor: "rgba(0,0,0,0.22)",
+    borderTopLeftRadius: radii.xl,
+    borderTopRightRadius: radii.xl,
+    paddingVertical: spacing.md,
+    marginTop: spacing.md,
+  },
+  statCell: { flex: 1, alignItems: "center", gap: 2 },
+  statSep: { width: 1, backgroundColor: "rgba(255,255,255,0.15)" },
+  statVal: {
+    fontSize: typography.fontSize.sm,
     fontFamily: typography.fontFamily.bold,
     color: colors.white,
   },
-  qaLabelDark: {
-    fontSize: typography.fontSize.base,
-    fontFamily: typography.fontFamily.bold,
-    color: colors.primary,
-  },
-  qaDesc: {
-    fontSize: typography.fontSize.sm,
+  statLbl: {
+    fontSize: 10,
     fontFamily: typography.fontFamily.regular,
-    color: "rgba(255,255,255,0.7)",
+    color: "rgba(255,255,255,0.6)",
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
   },
-  qaDescDark: {
+
+  /* ── Section fixée (alertes + actions) ── */
+  fixedSection: {
+    backgroundColor: colors.white,
+    paddingHorizontal: spacing["2xl"],
+    paddingTop: spacing.md,
+    paddingBottom: spacing.lg,
+    gap: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    ...shadows.sm,
+  },
+  alert: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 1,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+  },
+  alertWarn: {
+    backgroundColor: colors.warningBg,
+    borderColor: `${colors.warning}60`,
+  },
+  alertErr: {
+    backgroundColor: `${colors.error}10`,
+    borderColor: `${colors.error}40`,
+  },
+  alertText: {
+    flex: 1,
     fontSize: typography.fontSize.sm,
-    fontFamily: typography.fontFamily.regular,
-    color: colors.textSecondary,
+    fontFamily: typography.fontFamily.medium,
   },
-  badge: {
-    position: "absolute",
-    top: spacing.md,
-    right: spacing.md,
-    backgroundColor: colors.error,
+  alertBadge: {
     width: 22,
     height: 22,
     borderRadius: 11,
+    backgroundColor: colors.error,
     alignItems: "center",
     justifyContent: "center",
   },
-  badgeText: {
-    fontSize: typography.fontSize.xs,
+  alertBadgeText: {
+    fontSize: 11,
     fontFamily: typography.fontFamily.bold,
     color: colors.white,
+  },
+
+  /* Barre d'actions */
+  actionsBar: {
+    flexDirection: "row",
+    paddingTop: spacing.sm,
+  },
+
+  /* ── Historique ── */
+  list: { flex: 1 },
+  listContent: { paddingBottom: 24 },
+
+  filtersWrap: {
+    paddingHorizontal: spacing["2xl"],
+    paddingTop: spacing.lg,
+    gap: spacing.sm,
+  },
+  chipRow: {
+    flexDirection: "row",
+    gap: spacing.sm,
+  },
+  searchBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.white,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    gap: spacing.sm,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.regular,
+    color: colors.textPrimary,
+    padding: 0,
+  },
+
+  historyHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: spacing["2xl"],
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.sm,
+  },
+  historyTitle: {
+    fontSize: typography.fontSize.base,
+    fontFamily: typography.fontFamily.bold,
+    color: colors.textPrimary,
+  },
+  historyCount: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.regular,
+    color: colors.textMuted,
+  },
+
+  emptyState: {
+    alignItems: "center",
+    paddingTop: spacing["2xl"],
+    gap: spacing.sm,
+  },
+  emptyIcon: { fontSize: 36 },
+  emptyText: {
+    fontSize: typography.fontSize.base,
+    fontFamily: typography.fontFamily.medium,
+    color: colors.textMuted,
+  },
+  clearBtn: {
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.sm,
+    borderRadius: radii.full,
+    backgroundColor: `${colors.primary}15`,
+  },
+  clearBtnText: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.semiBold,
+    color: colors.primary,
   },
 });

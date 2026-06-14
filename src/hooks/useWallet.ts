@@ -49,3 +49,8 @@ export const useTransfer = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: [KEY] }),
   });
 };
+
+export const useWalletSearch = () =>
+  useMutation({
+    mutationFn: (telephone: string) => walletApi.searchByPhone(telephone),
+  });

@@ -17,6 +17,16 @@ export const voyagesApi = {
     return data;
   },
 
+  // Voyages EN_COURS visibles sur la carte
+  active: async (): Promise<Voyage[]> => {
+    try {
+      const { data } = await apiClient.get<Voyage[]>("/voyages/active");
+      return data;
+    } catch {
+      return [];
+    }
+  },
+
   search: async (params: VoyageSearchParams): Promise<VoyageSearchResult> => {
     const { data } = await apiClient.get<VoyageSearchResult>("/voyages/search", { params });
     return data;

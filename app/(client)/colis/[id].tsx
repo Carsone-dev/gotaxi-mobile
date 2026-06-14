@@ -9,6 +9,7 @@ import {
   Alert,
   Platform,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router, useLocalSearchParams } from "expo-router";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
@@ -229,6 +230,7 @@ function Row({ icon, label, value }: { icon: string; label: string; value: strin
 
 // ── Écran ─────────────────────────────────────────────────────────────────────
 export default function ColisDetailScreen() {
+  const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { showToast } = useToast();
 

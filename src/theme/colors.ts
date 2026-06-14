@@ -33,6 +33,8 @@ export const colors = {
   mtnYellow: "#FFD700",
   moovBlue: "#00B7E2",
   orangeOrange: "#FF6600",
+  celtisBlue: "#009FE3",
+  fedapayPurple: "#5C2D91",
 } as const;
 
 export type ColorKey = keyof typeof colors;

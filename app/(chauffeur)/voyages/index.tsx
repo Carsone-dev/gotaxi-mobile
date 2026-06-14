@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   RefreshControl,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { useMyVoyages, useStartVoyage, useEndVoyage, useCancelVoyage } from "@/src/hooks/useVoyages";
 import { formatFCFA, formatDate, formatTime } from "@/src/utils/formatters";
@@ -33,6 +34,7 @@ const STATUS_COLOR: Record<VoyageStatus, string> = {
 };
 
 export default function ChauffeurVoyagesScreen() {
+  const insets = useSafeAreaInsets();
   const { showToast } = useToast();
   const { data: voyages, isLoading, refetch, isRefetching } = useMyVoyages();
   const { mutateAsync: startVoyage, isPending: starting } = useStartVoyage();
@@ -108,7 +110,7 @@ export default function ChauffeurVoyagesScreen() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
         <Text style={styles.title}>Mes Voyages</Text>
         <Pressable
           style={styles.publishBtn}

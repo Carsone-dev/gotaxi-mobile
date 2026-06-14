@@ -16,6 +16,9 @@
     "ios": {
       "bundleIdentifier": "bj.gotaxi.app",
       "supportsTablet": false,
+      "config": {
+        "googleMapsApiKey": "REMPLACER_PAR_VOTRE_CLE_API_GOOGLE_MAPS"
+      },
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "GoTaxi a besoin de votre position pour vous trouver des trajets proches",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "GoTaxi a besoin de votre position pour la navigation GPS pendant le trajet",

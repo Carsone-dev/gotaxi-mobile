@@ -17,6 +17,7 @@ interface AuthState {
   restoreSession: () => Promise<void>;
   toggleChauffeurMode: () => void;
   refreshAccessToken: () => Promise<string | null>;
+  setUser: (user: User) => void;
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -93,6 +94,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     if (user?.role !== "CHAUFFEUR") return;
     set((s) => ({ isChauffeurMode: !s.isChauffeurMode }));
   },
+
+  setUser: (user) => set({ user }),
 
   refreshAccessToken: async () => {
     const refreshToken = get().refreshToken;

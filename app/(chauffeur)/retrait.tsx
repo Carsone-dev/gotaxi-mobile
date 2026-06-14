@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Platform,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useWithdraw, useWallet } from "@/src/hooks/useWallet";
@@ -50,11 +51,28 @@ const OPERATEURS: {
     bg: "#E8F9FF",
     hint: "Traitement manuel — sous 24h",
   },
+  {
+    id: "CELTIS",
+    label: "Celtis",
+    logo: "🔵",
+    color: colors.celtisBlue,
+    bg: "#E6F6FD",
+    hint: "Virement automatique — mode test",
+  },
+  {
+    id: "FEDAPAY",
+    label: "FedaPay",
+    logo: "💳",
+    color: colors.fedapayPurple,
+    bg: "#F3EEFF",
+    hint: "Agrégateur — MTN, Moov, Orange",
+  },
 ];
 
 const MONTANTS_RAPIDES = [1000, 2000, 5000, 10000, 25000, 50000];
 
 export default function ChauffeurRetraitScreen() {
+  const insets = useSafeAreaInsets();
   const { showToast } = useToast();
   const { data: wallet, isLoading: walletLoading } = useWallet();
   const { mutateAsync: withdraw, isPending } = useWithdraw();
@@ -231,7 +249,7 @@ export default function ChauffeurRetraitScreen() {
         )}
 
         {/* Note délai Orange/Moov */}
-        {operateur !== "MTN_MOMO" && (
+        {operateur !== "MTN_MOMO" && operateur !== "CELTIS" && operateur !== "FEDAPAY" && (
           <View style={styles.delayNote}>
             <Ionicons name="time-outline" size={16} color={colors.warningText} />
             <Text style={styles.delayNoteTxt}>
@@ -240,12 +258,12 @@ export default function ChauffeurRetraitScreen() {
           </View>
         )}
 
-        {/* Info MTN */}
-        {operateur === "MTN_MOMO" && (
+        {/* Info MTN / Celtis / FedaPay */}
+        {(operateur === "MTN_MOMO" || operateur === "CELTIS" || operateur === "FEDAPAY") && (
           <View style={styles.instantNote}>
             <Ionicons name="flash" size={16} color={colors.success} />
             <Text style={styles.instantNoteTxt}>
-              Les retraits MTN MoMo sont virés automatiquement — quasi-instantané.
+              Les retraits {opSelected.label} sont virés automatiquement — quasi-instantané.
             </Text>
           </View>
         )}

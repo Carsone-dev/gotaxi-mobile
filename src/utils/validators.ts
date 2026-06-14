@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export const phoneSchema = z
   .string()
-  .regex(/^\+229\d{10}$|^\+228\d{8}$/, "Format invalide (ex: +22901XXXXXXXX)");
+  .regex(/^\+\d{8,15}$/, "Numéro invalide (ex: +22901XXXXXXXX)");
 
 export const passwordSchema = z.string().min(8, "Minimum 8 caractères");
 

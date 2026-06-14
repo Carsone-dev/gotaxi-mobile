@@ -9,6 +9,7 @@ import {
   RefreshControl,
   Platform,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router, useLocalSearchParams } from "expo-router";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
@@ -147,6 +148,7 @@ type Params = {
 
 // ── Écran ─────────────────────────────────────────────────────────────────────
 export default function VoyagesColisScreen() {
+  const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<Params>();
   const { ville_depart, ville_arrivee, categorie, poids_kg, fragile } = params;
 

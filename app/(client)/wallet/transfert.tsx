@@ -9,7 +9,7 @@ import {
   ActivityIndicator,
   Platform,
 } from "react-native";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useTransfer, useWallet } from "@/src/hooks/useWallet";
 import { formatFCFA } from "@/src/utils/formatters";
@@ -23,8 +23,9 @@ export default function TransfertScreen() {
   const { showToast } = useToast();
   const { data: wallet } = useWallet();
   const { mutateAsync: transfer, isPending } = useTransfer();
+  const params = useLocalSearchParams<{ telephone?: string }>();
 
-  const [telephone, setTelephone] = useState("");
+  const [telephone, setTelephone] = useState(params.telephone ?? "");
   const [montant, setMontant] = useState("");
 
   const montantNum = parseInt(montant.replace(/\D/g, ""), 10) || 0;

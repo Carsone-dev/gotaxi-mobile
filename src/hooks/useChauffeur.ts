@@ -61,6 +61,15 @@ export const useAddVehicule = () => {
   });
 };
 
+export const useUploadVehiculePhoto = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, uri }: { id: string; uri: string }) =>
+      chauffeursApi.uploadVehiculePhoto(id, uri),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["chauffeur", "vehicules"] }),
+  });
+};
+
 export const useUpdateVehicule = () => {
   const qc = useQueryClient();
   return useMutation({

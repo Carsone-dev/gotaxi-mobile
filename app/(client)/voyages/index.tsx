@@ -19,36 +19,83 @@ import Animated, {
   FadeOutRight,
   FadeIn,
   FadeInDown,
+  useSharedValue,
+  withRepeat,
+  withSequence,
+  withTiming,
+  useAnimatedStyle,
 } from "react-native-reanimated";
 import * as Location from "expo-location";
+import * as Haptics from "expo-haptics";
 import { router, useFocusEffect } from "expo-router";
-import { format } from "date-fns";
+import { format, addDays } from "date-fns";
 import { fr } from "date-fns/locale";
-import { VILLES_LIST, nearestCity } from "@/src/constants/cities";
-import { useVoyagesByRoute } from "@/src/hooks/useVoyages";
+import { nearestCity } from "@/src/constants/cities";
+import { useSearchVoyages } from "@/src/hooks/useVoyages";
+import { useVilles, useGaresByVille } from "@/src/hooks/useGares";
 import { formatFCFA } from "@/src/utils/formatters";
 import { colors, typography, spacing, radii, shadows } from "@/src/theme";
 import type { Voyage } from "@/src/api/types";
 
 type Step = 1 | 2 | 3 | 4;
 
-// ── Indicateur d'étapes (4 cercles) ──────────────────────────────────────────
-function StepIndicator({ step }: { step: Step }) {
+const STEP_LABELS = ["Départ", "Arrivée", "Trajets", "Places"] as const;
+
+function toDateStr(d: Date) { return d.toISOString().split("T")[0]; }
+
+const DATE_OPTS = [
+  { label: "Aujourd'hui", delta: 0 },
+  { label: "Demain",      delta: 1 },
+  { label: "+ 2 jours",   delta: 2 },
+] as const;
+
+// ── Indicateur d'étapes ────────────────────────────────────────────────────────
+function StepIndicator({ step, light = false }: { step: Step; light?: boolean }) {
   const steps = [1, 2, 3, 4] as const;
   return (
-    <View style={si.row}>
+    <View style={si.container}>
       {steps.map((s, i) => {
         const done   = step > s;
         const active = step === s;
+        const filled = done || active;
         return (
           <React.Fragment key={s}>
-            <View style={[si.circle, done && si.circleDone, active && si.circleActive]}>
-              {done
-                ? <Text style={si.txt}>✓</Text>
-                : <Text style={[si.txt, !active && si.txtIdle]}>{s}</Text>}
+            <View style={si.stepCol}>
+              <View
+                style={[
+                  si.circle,
+                  filled && (light ? si.circleFilledLight : si.circleFilled),
+                  !filled && light && si.circleIdleLight,
+                ]}
+              >
+                <Text
+                  style={[
+                    si.circleText,
+                    !filled && (light ? si.circleTextIdleLight : si.circleTextIdle),
+                    filled && light && si.circleTextFilledLight,
+                  ]}
+                >
+                  {done ? "✓" : String(s)}
+                </Text>
+              </View>
+              <Text
+                style={[
+                  si.label,
+                  active && (light ? si.labelActiveLt : si.labelActive),
+                  !active && light && si.labelLt,
+                ]}
+              >
+                {STEP_LABELS[i]}
+              </Text>
             </View>
             {i < steps.length - 1 && (
-              <View style={[si.line, done && si.lineDone]} />
+              <View
+                style={[
+                  si.line,
+                  done && (light ? si.lineDoneLt : si.lineDone),
+                  !done && light && si.lineLt,
+                ]}
+              />
             )}
           </React.Fragment>
         );
@@ -56,29 +103,45 @@ function StepIndicator({ step }: { step: Step }) {
     </View>
   );
 }
+
 const si = StyleSheet.create({
-  row: { flexDirection: "row", alignItems: "center", marginBottom: spacing.sm },
+  container: { flexDirection: "row", alignItems: "flex-start", marginBottom: spacing.md },
+  stepCol:   { alignItems: "center", gap: 3 },
   circle: {
-    width: 26, height: 26, borderRadius: 13,
-    alignItems: "center", justifyContent: "center",
+    width: 28, height: 28, borderRadius: 14,
     backgroundColor: colors.border,
+    alignItems: "center", justifyContent: "center",
   },
-  circleActive: { backgroundColor: colors.primary },
-  circleDone:   { backgroundColor: colors.primary },
-  txt: {
+  circleFilled:      { backgroundColor: colors.primary },
+  circleIdleLight:   { backgroundColor: "rgba(255,255,255,0.2)" },
+  circleFilledLight: { backgroundColor: colors.white },
+  circleText: {
     fontSize: typography.fontSize.xs,
     fontFamily: typography.fontFamily.bold,
     color: colors.white,
+    lineHeight: 14,
   },
-  txtIdle: { color: colors.textMuted },
+  circleTextIdle:        { color: colors.textMuted },
+  circleTextIdleLight:   { color: "rgba(255,255,255,0.5)" },
+  circleTextFilledLight: { color: colors.primary },
+  label: {
+    fontSize: 9,
+    fontFamily: typography.fontFamily.medium,
+    color: colors.textMuted,
+  },
+  labelActive:   { color: colors.primary,  fontFamily: typography.fontFamily.bold },
+  labelLt:       { color: "rgba(255,255,255,0.65)" },
+  labelActiveLt: { color: colors.white,    fontFamily: typography.fontFamily.bold },
   line: {
     flex: 1, height: 2, backgroundColor: colors.border,
-    marginHorizontal: spacing.xs,
+    marginHorizontal: 4, marginTop: 13, borderRadius: 1, alignSelf: "flex-start",
   },
-  lineDone: { backgroundColor: colors.primary },
+  lineDone:   { backgroundColor: colors.primary },
+  lineLt:     { backgroundColor: "rgba(255,255,255,0.25)" },
+  lineDoneLt: { backgroundColor: "rgba(255,255,255,0.85)" },
 });
 
-// ── Modal sélection de ville ──────────────────────────────────────────────────
+// ── Modal sélection de ville (données depuis l'API backoffice) ─────────────────
 function CityPickerModal({
   visible, title, exclude, onSelect, onClose,
 }: {
@@ -88,10 +151,11 @@ function CityPickerModal({
   const [query, setQuery] = useState("");
   useEffect(() => { if (!visible) setQuery(""); }, [visible]);
 
-  const all    = VILLES_LIST.filter((v) => v !== exclude);
+  const { data: villes, isLoading: villesLoading } = useVilles();
+  const allActive = (villes ?? []).filter((v) => v.actif && v.nom !== exclude).map((v) => v.nom);
   const cities = query.trim()
-    ? all.filter((v) => v.toLowerCase().includes(query.toLowerCase()))
-    : all;
+    ? allActive.filter((v) => v.toLowerCase().includes(query.toLowerCase()))
+    : allActive;
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
@@ -121,44 +185,47 @@ function CityPickerModal({
               </Pressable>
             )}
           </View>
-          <FlatList
-            data={cities}
-            keyExtractor={(v) => v}
-            style={{ maxHeight: 340 }}
-            keyboardShouldPersistTaps="handled"
-            ListEmptyComponent={
-              <View style={styles.modalEmpty}>
-                <Text style={styles.modalEmptyTxt}>Aucune ville trouvée</Text>
-              </View>
-            }
-            renderItem={({ item }) => (
-              <Pressable
-                style={({ pressed }) => [styles.modalItem, pressed && styles.modalItemPressed]}
-                onPress={() => { onSelect(item); onClose(); }}
-              >
-                <Text style={styles.modalItemPin}>📍</Text>
-                <Text style={styles.modalItemTxt}>{item}</Text>
-                <Text style={styles.modalItemChevron}>›</Text>
-              </Pressable>
-            )}
-          />
+          {villesLoading && allActive.length === 0 ? (
+            <View style={styles.modalEmpty}>
+              <ActivityIndicator color={colors.primary} size="small" />
+              <Text style={[styles.modalEmptyTxt, { marginTop: spacing.sm }]}>
+                Chargement des villes…
+              </Text>
+            </View>
+          ) : (
+            <FlatList
+              data={cities}
+              keyExtractor={(v) => v}
+              style={{ maxHeight: 340 }}
+              keyboardShouldPersistTaps="handled"
+              ListEmptyComponent={
+                <View style={styles.modalEmpty}>
+                  <Text style={styles.modalEmptyTxt}>Aucune ville trouvée</Text>
+                </View>
+              }
+              renderItem={({ item }) => (
+                <Pressable
+                  style={({ pressed }) => [styles.modalItem, pressed && styles.modalItemPressed]}
+                  onPress={() => { Haptics.selectionAsync(); onSelect(item); onClose(); }}
+                >
+                  <Text style={styles.modalItemPin}>📍</Text>
+                  <Text style={styles.modalItemTxt}>{item}</Text>
+                  <Text style={styles.modalItemChevron}>›</Text>
+                </Pressable>
+              )}
+            />
+          )}
         </View>
       </View>
     </Modal>
   );
 }
 
-// ── Popup dépassement de capacité ─────────────────────────────────────────────
+// ── Popup dépassement de capacité ──────────────────────────────────────────────
 function OverCapacityModal({
-  visible,
-  available,
-  onConfirm,
-  onCancel,
+  visible, available, onConfirm, onCancel,
 }: {
-  visible: boolean;
-  available: number;
-  onConfirm: () => void;
-  onCancel: () => void;
+  visible: boolean; available: number; onConfirm: () => void; onCancel: () => void;
 }) {
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onCancel}>
@@ -170,15 +237,10 @@ function OverCapacityModal({
           <Text style={styles.ocTitle}>Places limitées</Text>
           <Text style={styles.ocBody}>
             Ce chauffeur ne dispose que de{" "}
-            <Text style={styles.ocBold}>
-              {available} place{available > 1 ? "s" : ""}
-            </Text>{" "}
+            <Text style={styles.ocBold}>{available} place{available > 1 ? "s" : ""}</Text>{" "}
             disponible{available > 1 ? "s" : ""}.{"\n"}
             Souhaitez-vous réserver{" "}
-            <Text style={styles.ocBold}>
-              {available} place{available > 1 ? "s" : ""}
-            </Text>{" "}
-            ?
+            <Text style={styles.ocBold}>{available} place{available > 1 ? "s" : ""}</Text> ?
           </Text>
           <Pressable
             style={({ pressed }) => [styles.ocBtnPrimary, pressed && { opacity: 0.85 }]}
@@ -200,20 +262,282 @@ function OverCapacityModal({
   );
 }
 
-// ── Carte voyage (étape 3) ────────────────────────────────────────────────────
-function VoyageSelectCard({
-  voyage,
-  index,
-  onSelect,
+// ── Grille visuelle des sièges ─────────────────────────────────────────────────
+function SeatGrid({ total, selected }: { total: number; selected: number }) {
+  const display = Math.min(total, 8);
+  return (
+    <View style={sg.row}>
+      {Array.from({ length: display }).map((_, i) => (
+        <Animated.View
+          key={i}
+          entering={FadeIn.duration(120).delay(i * 35)}
+          style={[sg.seat, i < selected && sg.seatSelected]}
+        >
+          <Text style={[sg.icon, i < selected && sg.iconSelected]}>
+            {i < selected ? "●" : "○"}
+          </Text>
+        </Animated.View>
+      ))}
+    </View>
+  );
+}
+const sg = StyleSheet.create({
+  row: {
+    flexDirection: "row", gap: spacing.sm, flexWrap: "wrap",
+    justifyContent: "center", paddingVertical: spacing.sm,
+  },
+  seat: {
+    width: 36, height: 36, borderRadius: radii.md,
+    backgroundColor: colors.surface,
+    borderWidth: 1.5, borderColor: colors.border,
+    alignItems: "center", justifyContent: "center",
+  },
+  seatSelected: { backgroundColor: `${colors.primary}15`, borderColor: colors.primary },
+  icon:         { fontSize: 14, color: colors.border },
+  iconSelected: { color: colors.primary },
+});
+
+// ── Suggestions de gares (dynamiques depuis l'API) ─────────────────────────────
+function GareSuggestions({
+  villeNom, currentValue, onSelect,
 }: {
-  voyage: Voyage;
-  index: number;
-  onSelect: (v: Voyage) => void;
+  villeNom: string;
+  currentValue: string;
+  onSelect: (nom: string) => void;
+}) {
+  const { data: villes } = useVilles();
+  const villeId = villes?.find((v) => v.nom === villeNom)?.id ?? null;
+  const { data: gares, isLoading } = useGaresByVille(villeId);
+
+  const activeGares = (gares ?? []).filter((g) => g.actif);
+
+  if (!villeNom || (!isLoading && !activeGares.length)) return null;
+
+  return (
+    <Animated.View entering={FadeInDown.duration(220)} style={gs.wrap}>
+      <Text style={gs.label}>
+        {isLoading ? "Chargement des gares…" : "Gares & points de départ"}
+      </Text>
+      {isLoading ? (
+        <ActivityIndicator color={colors.primary} size="small" style={{ marginTop: 6 }} />
+      ) : (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={gs.row}
+        >
+          {activeGares.map((g) => {
+            const active = currentValue === g.nom;
+            return (
+              <Pressable
+                key={g.id}
+                style={({ pressed }) => [
+                  gs.chip,
+                  active && gs.chipActive,
+                  pressed && !active && gs.chipPressed,
+                ]}
+                onPress={() => { Haptics.selectionAsync(); onSelect(g.nom); }}
+              >
+                <Text style={[gs.chipTxt, active && gs.chipTxtActive]}>
+                  {active ? "✓ " : "📍 "}{g.nom}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      )}
+    </Animated.View>
+  );
+}
+
+const gs = StyleSheet.create({
+  wrap: { gap: 6 },
+  label: {
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamily.medium,
+    color: colors.textMuted,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  row: { flexDirection: "row", gap: spacing.sm, paddingVertical: 2 },
+  chip: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 7,
+    borderRadius: radii.full,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.white,
+  },
+  chipActive:  { backgroundColor: `${colors.primary}12`, borderColor: `${colors.primary}50` },
+  chipPressed: { backgroundColor: colors.surface },
+  chipTxt: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.medium,
+    color: colors.textSecondary,
+  },
+  chipTxtActive: { color: colors.primary, fontFamily: typography.fontFamily.semiBold },
+});
+
+// ── Feuille d'édition du point d'embarquement ─────────────────────────────────
+function EmbarkEditSheet({
+  visible, title, value, villeNom, onConfirm, onClose,
+}: {
+  visible: boolean;
+  title: string;
+  value: string;
+  villeNom: string;
+  onConfirm: (v: string) => void;
+  onClose: () => void;
+}) {
+  const [text, setText] = useState(value);
+  useEffect(() => { if (visible) setText(value); }, [visible]);
+
+  function confirm() {
+    if (text.trim()) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      onConfirm(text.trim());
+      onClose();
+    }
+  }
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <KeyboardAvoidingView
+        style={ees.overlay}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
+        <Pressable style={StyleSheet.absoluteFillObject} onPress={onClose} />
+        <View style={ees.sheet}>
+          <View style={ees.handle} />
+          <View style={ees.header}>
+            <Text style={ees.title}>{title}</Text>
+            <Pressable style={ees.closeBtn} onPress={onClose} hitSlop={12}>
+              <Text style={ees.closeTxt}>✕</Text>
+            </Pressable>
+          </View>
+          <ScrollView
+            style={{ maxHeight: 340 }}
+            contentContainerStyle={ees.body}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            <TextInput
+              style={[ees.input, text.length > 0 && ees.inputFilled]}
+              value={text}
+              onChangeText={setText}
+              placeholder="Ex: Gare de Cotonou, Carrefour Godomey…"
+              placeholderTextColor={colors.textMuted}
+              autoFocus
+              returnKeyType="done"
+              onSubmitEditing={confirm}
+            />
+            <GareSuggestions villeNom={villeNom} currentValue={text} onSelect={setText} />
+          </ScrollView>
+          <View style={ees.footer}>
+            <Pressable
+              style={[ees.confirmBtn, !text.trim() && ees.confirmBtnOff]}
+              onPress={confirm}
+              disabled={!text.trim()}
+            >
+              <Text style={ees.confirmTxt}>Confirmer le point</Text>
+            </Pressable>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+const ees = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "flex-end",
+  },
+  sheet: {
+    backgroundColor: colors.white,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    ...shadows.lg,
+  },
+  handle: {
+    width: 44, height: 4, borderRadius: 2,
+    backgroundColor: colors.border,
+    alignSelf: "center", marginTop: 12, marginBottom: 8,
+  },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: spacing["2xl"],
+    paddingVertical: spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  title: {
+    fontSize: typography.fontSize.lg,
+    fontFamily: typography.fontFamily.bold,
+    color: colors.textPrimary,
+  },
+  closeBtn: {
+    width: 32, height: 32, borderRadius: 16,
+    backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.border,
+    alignItems: "center", justifyContent: "center",
+  },
+  closeTxt: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.bold,
+    color: colors.textSecondary,
+  },
+  body: {
+    padding: spacing["2xl"],
+    gap: spacing.lg,
+    paddingBottom: spacing.md,
+  },
+  input: {
+    backgroundColor: colors.surface,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    borderRadius: radii.xl,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    fontSize: typography.fontSize.base,
+    fontFamily: typography.fontFamily.regular,
+    color: colors.textPrimary,
+    minHeight: 48,
+  },
+  inputFilled: { borderColor: `${colors.primary}50`, backgroundColor: colors.white },
+  footer: {
+    paddingHorizontal: spacing["2xl"],
+    paddingBottom: Platform.OS === "ios" ? 36 : 24,
+    paddingTop: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  confirmBtn: {
+    backgroundColor: colors.primary,
+    borderRadius: radii.full,
+    paddingVertical: spacing.lg,
+    alignItems: "center",
+  },
+  confirmBtnOff: { opacity: 0.35 },
+  confirmTxt: {
+    fontSize: typography.fontSize.base,
+    fontFamily: typography.fontFamily.bold,
+    color: colors.white,
+  },
+});
+
+// ── Carte voyage (étape 3) ─────────────────────────────────────────────────────
+function VoyageSelectCard({
+  voyage, index, onSelect,
+}: {
+  voyage: Voyage; index: number; onSelect: (v: Voyage) => void;
 }) {
   const isFull = voyage.nombre_places_restantes === 0;
-  const accent = isFull ? colors.error
-    : voyage.nombre_places_restantes <= 2 ? colors.orangeOrange
-    : colors.primary;
+  const isLow  = !isFull && voyage.nombre_places_restantes <= 2;
+  const accent = isFull ? colors.error : isLow ? colors.orangeOrange : colors.primary;
 
   return (
     <Animated.View entering={FadeInDown.duration(250).delay(index * 60)}>
@@ -223,15 +547,19 @@ function VoyageSelectCard({
           isFull && styles.vCardFull,
           pressed && !isFull && styles.vCardPressed,
         ]}
-        onPress={() => !isFull && onSelect(voyage)}
+        onPress={() => {
+          if (!isFull) {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            onSelect(voyage);
+          }
+        }}
         disabled={isFull}
       >
-        {/* Accent bar */}
-        <View style={[styles.vAccent, { backgroundColor: accent }]} />
+        <View style={[styles.vLeftAccent, { backgroundColor: accent }]} />
 
         <View style={styles.vBody}>
-          {/* Top : heure + prix */}
-          <View style={styles.vTop}>
+          {/* Top: heure + prix */}
+          <View style={styles.vTopRow}>
             <View>
               <Text style={styles.vTime}>
                 {format(new Date(voyage.date_depart), "HH:mm")}
@@ -276,17 +604,17 @@ function VoyageSelectCard({
             </View>
           </View>
 
-          {/* Footer : places + tags + CTA */}
+          {/* Footer: places + tags + CTA */}
           <View style={styles.vFooter}>
             <View style={[
               styles.vPlaceBadge,
               isFull && styles.vPlaceBadgeFull,
-              voyage.nombre_places_restantes <= 2 && !isFull && styles.vPlaceBadgeWarn,
+              isLow  && styles.vPlaceBadgeWarn,
             ]}>
               <Text style={[
                 styles.vPlaceTxt,
                 isFull && styles.vPlaceTxtFull,
-                voyage.nombre_places_restantes <= 2 && !isFull && styles.vPlaceTxtWarn,
+                isLow  && styles.vPlaceTxtWarn,
               ]}>
                 {isFull
                   ? "🚫 Complet"
@@ -294,12 +622,12 @@ function VoyageSelectCard({
               </Text>
             </View>
             <View style={styles.vTags}>
-              {voyage.climatise    && <Text style={styles.vTag}>❄️</Text>}
+              {voyage.climatise     && <Text style={styles.vTag}>❄️</Text>}
               {voyage.accepte_colis && <Text style={styles.vTag}>📦</Text>}
-              {voyage.non_fumeur   && <Text style={styles.vTag}>🚭</Text>}
+              {voyage.non_fumeur    && <Text style={styles.vTag}>🚭</Text>}
             </View>
             {!isFull && (
-              <View style={styles.vSelectBtn}>
+              <View style={[styles.vSelectBtn, { backgroundColor: accent }]}>
                 <Text style={styles.vSelectTxt}>Choisir →</Text>
               </View>
             )}
@@ -310,39 +638,74 @@ function VoyageSelectCard({
   );
 }
 
-// ── Écran principal ───────────────────────────────────────────────────────────
+// ── Écran principal ────────────────────────────────────────────────────────────
 export default function VoyagesScreen() {
   const [step, setStep] = useState<Step>(1);
   const directionRef = useRef<"forward" | "backward">("forward");
 
-  // Étape 1 — Départ
+  // Étape 1
   const [cityDepart,  setCityDepart]  = useState("");
   const [pointDepart, setPointDepart] = useState("");
   const [locStatus,   setLocStatus]   = useState<"idle" | "detecting" | "found" | "denied">("idle");
   const [showDepartPicker, setShowDepartPicker] = useState(false);
 
-  // Étape 2 — Destination
-  const [cityArrivee,  setCityArrivee]  = useState("");
-  const [pointArrivee, setPointArrivee] = useState("");
+  // Étape 2
+  const [cityArrivee,   setCityArrivee]   = useState("");
+  const [pointArrivee,  setPointArrivee]  = useState("");
+  const [searchDate,    setSearchDate]    = useState(() => toDateStr(new Date()));
   const [showArriveePicker, setShowArriveePicker] = useState(false);
 
-  // Étape 3 — Voyage sélectionné
+  // Étape 3
   const [selectedVoyage, setSelectedVoyage] = useState<Voyage | null>(null);
 
-  // Étape 4 — Places
-  const [nombrePlaces,      setNombrePlaces]      = useState(1);
-  const [showOverCapacity,  setShowOverCapacity]  = useState(false);
+  // Étape 4
+  const [nombrePlaces,     setNombrePlaces]     = useState(1);
+  const [showOverCapacity, setShowOverCapacity] = useState(false);
 
-  // Recherche voyages (activée dès l'étape 3)
+  // Points d'embarquement dynamiques (pré-remplis depuis le voyage sélectionné)
+  const [embarkDepart,  setEmbarkDepart]  = useState("");
+  const [embarkArrivee, setEmbarkArrivee] = useState("");
+  const [editingEmbark, setEditingEmbark] = useState<"depart" | "arrivee" | null>(null);
+
+  // Réinitialisation automatique du point quand la ville change
+  useEffect(() => { setPointDepart(""); }, [cityDepart]);
+  useEffect(() => { setPointArrivee(""); }, [cityArrivee]);
+
+  // Animation pulse GPS
+  const pulseAnim = useSharedValue(0);
+  const pulseStyle = useAnimatedStyle(() => ({
+    opacity: pulseAnim.value * 0.45,
+    transform: [{ scale: 1 + pulseAnim.value * 0.4 }],
+  }));
+
+  useEffect(() => {
+    if (locStatus === "detecting") {
+      pulseAnim.value = withRepeat(
+        withSequence(withTiming(1, { duration: 700 }), withTiming(0, { duration: 700 })),
+        -1, false,
+      );
+    } else {
+      pulseAnim.value = withTiming(0, { duration: 300 });
+    }
+  }, [locStatus]);
+
+  // Recherche voyages
   const {
-    data: voyages,
+    data: voyagesResult,
     isLoading: loadingVoyages,
     refetch: refetchVoyages,
-  } = useVoyagesByRoute(
-    step >= 3 ? cityDepart  : "",
-    step >= 3 ? cityArrivee : "",
+  } = useSearchVoyages(
+    {
+      ville_depart:  cityDepart,
+      ville_arrivee: cityArrivee,
+      date_depart:   searchDate,
+      sort_by:       "depart_asc",
+    },
+    step >= 3,
   );
-  const voyagesDispos = voyages?.filter((v) => v.nombre_places_restantes > 0) ?? [];
+  const voyagesDispos = (voyagesResult?.items ?? []).filter(
+    (v) => v.statut === "PUBLIE" && v.nombre_places_restantes > 0,
+  );
 
   // GPS
   const detectLocation = useCallback(async () => {
@@ -373,31 +736,27 @@ export default function VoyagesScreen() {
     }, [locStatus, detectLocation]),
   );
 
-  // Navigation entre étapes
   function goTo(s: Step) {
     directionRef.current = s > step ? "forward" : "backward";
     setStep(s);
   }
 
-  // Sélection d'un voyage (étape 3 → 4)
   function handleSelectVoyage(v: Voyage) {
     setSelectedVoyage(v);
     setNombrePlaces(1);
+    // Pré-remplir les points depuis le trajet du chauffeur
+    setEmbarkDepart(v.point_depart ?? pointDepart);
+    setEmbarkArrivee(v.point_arrivee ?? pointArrivee);
     goTo(4);
   }
 
-  // Confirmation de réservation (étape 4)
   function handleReserver() {
     if (!selectedVoyage) return;
     const max = selectedVoyage.nombre_places_restantes;
-    if (nombrePlaces > max) {
-      setShowOverCapacity(true);
-      return;
-    }
+    if (nombrePlaces > max) { setShowOverCapacity(true); return; }
     proceedToConfirm(nombrePlaces);
   }
 
-  // Accepter le max disponible depuis le popup
   function handleAcceptMax() {
     setShowOverCapacity(false);
     if (!selectedVoyage) return;
@@ -418,17 +777,22 @@ export default function VoyagesScreen() {
     });
   }
 
-  // Conditions de progression
-  const canStep2   = !!cityDepart && pointDepart.trim().length >= 2;
-  const canStep3   = !!cityArrivee && pointArrivee.trim().length >= 2;
+  function handleSwapCities() {
+    if (!cityArrivee) return;
+    const tmp = cityDepart;
+    setCityDepart(cityArrivee);
+    setCityArrivee(tmp);
+    setLocStatus("found");
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  }
 
-  // Animations directionnelles
-  const entering = directionRef.current === "forward"
-    ? FadeInRight.duration(260)
-    : FadeInLeft.duration(260);
-  const exiting = directionRef.current === "forward"
-    ? FadeOutLeft.duration(260)
-    : FadeOutRight.duration(260);
+  const canStep2 = !!cityDepart && pointDepart.trim().length >= 2;
+  const canStep3 = !!cityArrivee && pointArrivee.trim().length >= 2;
+
+  const entering = directionRef.current === "forward" ? FadeInRight.duration(260) : FadeInLeft.duration(260);
+  const exiting  = directionRef.current === "forward" ? FadeOutLeft.duration(260) : FadeOutRight.duration(260);
+
+  const dateLabel = format(new Date(searchDate), "EEE d MMM", { locale: fr });
 
   return (
     <View style={styles.root}>
@@ -439,25 +803,26 @@ export default function VoyagesScreen() {
           exiting={exiting}
           style={StyleSheet.absoluteFillObject}
         >
+
           {/* ════════════ Étape 1 : Départ ════════════ */}
           {step === 1 && (
             <KeyboardAvoidingView
               style={{ flex: 1 }}
               behavior={Platform.OS === "ios" ? "padding" : undefined}
             >
-              <View style={styles.header}>
-                <StepIndicator step={step} />
-                <Text style={styles.headerTitle}>D'où partez-vous ?</Text>
-                <Text style={styles.headerSub}>Votre ville et point d'embarquement</Text>
+              <View style={styles.heroHeader}>
+                <StepIndicator step={step} light />
+                <Text style={styles.heroTitle}>D'où partez-vous ?</Text>
+                <Text style={styles.heroSub}>Ville et point d'embarquement</Text>
               </View>
 
               <ScrollView
-                style={{ flex: 1 }}
+                style={styles.contentArea}
                 contentContainerStyle={styles.body}
                 keyboardShouldPersistTaps="handled"
                 showsVerticalScrollIndicator={false}
               >
-                {/* GPS */}
+                {/* GPS Card */}
                 <Pressable
                   style={[
                     styles.gpsCard,
@@ -466,17 +831,20 @@ export default function VoyagesScreen() {
                   ]}
                   onPress={detectLocation}
                 >
-                  <View style={[styles.gpsIconWrap, locStatus === "found" && styles.gpsIconWrapFound]}>
-                    {locStatus === "detecting"
-                      ? <ActivityIndicator color={colors.primary} size="small" />
-                      : <Text style={styles.gpsEmoji}>
-                          {locStatus === "found" ? "📍" : "🔍"}
-                        </Text>}
+                  <View style={styles.gpsIconOuter}>
+                    {locStatus === "detecting" && (
+                      <Animated.View style={[styles.gpsPulseRing, pulseStyle]} />
+                    )}
+                    <View style={[styles.gpsIconWrap, locStatus === "found" && styles.gpsIconWrapFound]}>
+                      {locStatus === "detecting"
+                        ? <ActivityIndicator color={colors.primary} size="small" />
+                        : <Text style={styles.gpsEmoji}>{locStatus === "found" ? "📍" : "🔍"}</Text>}
+                    </View>
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.gpsLabel, locStatus === "found" && styles.gpsLabelFound]}>
                       {locStatus === "detecting" ? "Localisation en cours…"
-                        : locStatus === "found" ? cityDepart
+                        : locStatus === "found"  ? cityDepart
                         : "Détecter ma position"}
                     </Text>
                     <Text style={styles.gpsHint}>
@@ -490,19 +858,22 @@ export default function VoyagesScreen() {
                   <Text style={styles.gpsRefresh}>↻</Text>
                 </Pressable>
 
-                {/* Ville de départ */}
+                {/* Ville départ */}
                 <View style={styles.field}>
                   <Text style={styles.fieldLabel}>
                     <Text style={styles.dot}>● </Text>Ville de départ
                   </Text>
-                  <Pressable style={styles.cityBtn} onPress={() => setShowDepartPicker(true)}>
+                  <Pressable
+                    style={[styles.cityBtn, cityDepart && styles.cityBtnFilled]}
+                    onPress={() => setShowDepartPicker(true)}
+                  >
                     <Text style={styles.cityIcon}>🏙</Text>
                     <Text style={[styles.cityTxt, !cityDepart && styles.cityPlaceholder]}>
                       {cityDepart || "Sélectionner une ville"}
                     </Text>
-                    <View style={styles.chevronWrap}>
-                      <Text style={styles.chevron}>▼</Text>
-                    </View>
+                    {cityDepart
+                      ? <View style={styles.cityCheckWrap}><Text style={styles.cityCheck}>✓</Text></View>
+                      : <View style={styles.chevronWrap}><Text style={styles.chevron}>▼</Text></View>}
                   </Pressable>
                 </View>
 
@@ -519,16 +890,22 @@ export default function VoyagesScreen() {
                     placeholderTextColor={colors.textMuted}
                     returnKeyType="done"
                   />
-                  <Text style={styles.fieldHint}>
-                    Précisez l'endroit exact où vous embarquez (min. 2 caractères)
-                  </Text>
+                  <Text style={styles.fieldHint}>Précisez l'endroit exact (min. 2 caractères)</Text>
+                  {/* Suggestions de gares depuis l'API */}
+                  {cityDepart ? (
+                    <GareSuggestions
+                      villeNom={cityDepart}
+                      currentValue={pointDepart}
+                      onSelect={setPointDepart}
+                    />
+                  ) : null}
                 </View>
               </ScrollView>
 
               <View style={styles.ctaArea}>
                 <Pressable
-                  style={[styles.ctaBtn, !canStep2 && styles.ctaBtnOff]}
-                  onPress={() => canStep2 && goTo(2)}
+                  style={({ pressed }) => [styles.ctaBtn, !canStep2 && styles.ctaBtnOff, pressed && canStep2 && { opacity: 0.88 }]}
+                  onPress={() => { if (canStep2) { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); goTo(2); } }}
                   disabled={!canStep2}
                 >
                   <Text style={styles.ctaTxt}>Choisir ma destination</Text>
@@ -544,42 +921,59 @@ export default function VoyagesScreen() {
               style={{ flex: 1 }}
               behavior={Platform.OS === "ios" ? "padding" : undefined}
             >
-              <View style={styles.header}>
-                <Pressable onPress={() => goTo(1)} style={styles.backBtn} hitSlop={8}>
-                  <Text style={styles.backBtnTxt}>←</Text>
+              <View style={styles.heroHeader}>
+                <Pressable onPress={() => goTo(1)} style={styles.heroBackBtn} hitSlop={8}>
+                  <Text style={styles.heroBackTxt}>←</Text>
                 </Pressable>
-                <View style={{ flex: 1 }}>
-                  <StepIndicator step={step} />
-                  <Text style={styles.headerTitle}>Où allez-vous ?</Text>
-                  <Text style={styles.headerSub} numberOfLines={1}>
-                    Depuis {cityDepart} · {pointDepart}
-                  </Text>
-                </View>
+                <StepIndicator step={step} light />
+                <Text style={styles.heroTitle}>Où allez-vous ?</Text>
+                <Text style={styles.heroSub} numberOfLines={1}>Depuis {cityDepart}</Text>
               </View>
 
               <ScrollView
-                style={{ flex: 1 }}
+                style={styles.contentArea}
                 contentContainerStyle={styles.body}
                 keyboardShouldPersistTaps="handled"
                 showsVerticalScrollIndicator={false}
               >
+                {/* Résumé départ + swap */}
+                <Animated.View entering={FadeIn.duration(200)} style={styles.departSummary}>
+                  <View style={styles.dsDot} />
+                  <View style={{ flex: 1, gap: 2 }}>
+                    <Text style={styles.dsCityTxt}>{cityDepart}</Text>
+                    <Text style={styles.dsPointTxt} numberOfLines={1}>{pointDepart}</Text>
+                  </View>
+                  {cityArrivee ? (
+                    <Pressable
+                      style={({ pressed }) => [styles.swapBtn, pressed && { opacity: 0.7 }]}
+                      onPress={handleSwapCities}
+                      hitSlop={8}
+                    >
+                      <Text style={styles.swapTxt}>⇅</Text>
+                    </Pressable>
+                  ) : null}
+                </Animated.View>
+
                 {/* Ville destination */}
                 <View style={styles.field}>
                   <Text style={styles.fieldLabel}>
                     <Text style={styles.dot}>● </Text>Ville de destination
                   </Text>
-                  <Pressable style={styles.cityBtn} onPress={() => setShowArriveePicker(true)}>
+                  <Pressable
+                    style={[styles.cityBtn, cityArrivee && styles.cityBtnFilled]}
+                    onPress={() => setShowArriveePicker(true)}
+                  >
                     <Text style={styles.cityIcon}>🎯</Text>
                     <Text style={[styles.cityTxt, !cityArrivee && styles.cityPlaceholder]}>
                       {cityArrivee || "Sélectionner une ville"}
                     </Text>
-                    <View style={styles.chevronWrap}>
-                      <Text style={styles.chevron}>▼</Text>
-                    </View>
+                    {cityArrivee
+                      ? <View style={styles.cityCheckWrap}><Text style={styles.cityCheck}>✓</Text></View>
+                      : <View style={styles.chevronWrap}><Text style={styles.chevron}>▼</Text></View>}
                   </Pressable>
                 </View>
 
-                {/* Point de destination */}
+                {/* Point destination */}
                 <View style={styles.field}>
                   <Text style={styles.fieldLabel}>
                     <Text style={styles.dot}>● </Text>Point de destination
@@ -592,12 +986,49 @@ export default function VoyagesScreen() {
                     placeholderTextColor={colors.textMuted}
                     returnKeyType="done"
                   />
-                  <Text style={styles.fieldHint}>
-                    Précisez l'endroit exact où vous descendez (min. 2 caractères)
-                  </Text>
+                  <Text style={styles.fieldHint}>Précisez l'endroit exact (min. 2 caractères)</Text>
+                  {cityArrivee ? (
+                    <GareSuggestions
+                      villeNom={cityArrivee}
+                      currentValue={pointArrivee}
+                      onSelect={setPointArrivee}
+                    />
+                  ) : null}
                 </View>
 
-                {/* Aperçu du trajet */}
+                {/* Date du voyage */}
+                <View style={styles.field}>
+                  <Text style={styles.fieldLabel}>
+                    <Text style={styles.dot}>● </Text>Date du voyage
+                  </Text>
+                  <View style={styles.dateChipsRow}>
+                    {DATE_OPTS.map((opt) => {
+                      const d   = toDateStr(addDays(new Date(), opt.delta));
+                      const sel = searchDate === d;
+                      return (
+                        <Pressable
+                          key={opt.delta}
+                          style={[styles.dateChip, sel && styles.dateChipActive]}
+                          onPress={() => {
+                            Haptics.selectionAsync();
+                            setSearchDate(d);
+                          }}
+                        >
+                          <Text style={[styles.dateChipTxt, sel && styles.dateChipTxtActive]}>
+                            {opt.label}
+                          </Text>
+                          {sel && (
+                            <Text style={styles.dateChipSub}>
+                              {format(new Date(d), "d MMM", { locale: fr })}
+                            </Text>
+                          )}
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
+
+                {/* Aperçu trajet */}
                 {cityArrivee ? (
                   <Animated.View entering={FadeIn.duration(200)} style={styles.routePreview}>
                     <View style={styles.rpDotStart} />
@@ -619,8 +1050,8 @@ export default function VoyagesScreen() {
 
               <View style={styles.ctaArea}>
                 <Pressable
-                  style={[styles.ctaBtn, !canStep3 && styles.ctaBtnOff]}
-                  onPress={() => canStep3 && goTo(3)}
+                  style={({ pressed }) => [styles.ctaBtn, !canStep3 && styles.ctaBtnOff, pressed && canStep3 && { opacity: 0.88 }]}
+                  onPress={() => { if (canStep3) { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); goTo(3); } }}
                   disabled={!canStep3}
                 >
                   <Text style={styles.ctaTxt}>Voir les trajets disponibles</Text>
@@ -639,11 +1070,9 @@ export default function VoyagesScreen() {
                 </Pressable>
                 <View style={{ flex: 1 }}>
                   <StepIndicator step={step} />
-                  <Text style={styles.resultsTitle}>
-                    {cityDepart} → {cityArrivee}
-                  </Text>
+                  <Text style={styles.resultsTitle}>{cityDepart} → {cityArrivee}</Text>
                   <Text style={styles.resultsSub} numberOfLines={1}>
-                    {pointDepart} · {pointArrivee}
+                    {dateLabel} · {pointDepart}
                   </Text>
                 </View>
                 <Pressable style={styles.modifyBtn} onPress={() => goTo(1)}>
@@ -661,12 +1090,15 @@ export default function VoyagesScreen() {
                   <Text style={styles.stateEmoji}>🛣️</Text>
                   <Text style={styles.stateTitle}>Aucun trajet disponible</Text>
                   <Text style={styles.stateTxt}>
-                    {voyages && voyages.length > 0
+                    {(voyagesResult?.items ?? []).length > 0
                       ? "Tous les trajets sur ce trajet sont complets."
-                      : "Aucun voyage prévu sur ce trajet pour l'instant."}
+                      : `Aucun voyage prévu le ${dateLabel} sur ce trajet.`}
                   </Text>
                   <Pressable style={styles.refreshBtn} onPress={() => refetchVoyages()}>
                     <Text style={styles.refreshBtnTxt}>↻  Actualiser</Text>
+                  </Pressable>
+                  <Pressable style={styles.changeDateBtn} onPress={() => goTo(2)}>
+                    <Text style={styles.changeDateBtnTxt}>Changer la date</Text>
                   </Pressable>
                 </View>
               ) : (
@@ -676,16 +1108,17 @@ export default function VoyagesScreen() {
                   contentContainerStyle={styles.listContent}
                   showsVerticalScrollIndicator={false}
                   ListHeaderComponent={
-                    <Text style={styles.listHint}>
-                      {voyagesDispos.length} trajet{voyagesDispos.length > 1 ? "s" : ""} disponible{voyagesDispos.length > 1 ? "s" : ""} — appuyez pour sélectionner
-                    </Text>
+                    <View style={styles.listHeaderRow}>
+                      <Text style={styles.listHint}>
+                        {voyagesDispos.length} trajet{voyagesDispos.length > 1 ? "s" : ""} · {dateLabel}
+                      </Text>
+                      <View style={styles.listDateBadge}>
+                        <Text style={styles.listDateBadgeTxt}>📅 {dateLabel}</Text>
+                      </View>
+                    </View>
                   }
                   renderItem={({ item, index }) => (
-                    <VoyageSelectCard
-                      voyage={item}
-                      index={index}
-                      onSelect={handleSelectVoyage}
-                    />
+                    <VoyageSelectCard voyage={item} index={index} onSelect={handleSelectVoyage} />
                   )}
                 />
               )}
@@ -695,25 +1128,23 @@ export default function VoyagesScreen() {
           {/* ════════════ Étape 4 : Nombre de places ════════════ */}
           {step === 4 && selectedVoyage && (
             <View style={{ flex: 1 }}>
-              <View style={styles.header}>
-                <Pressable onPress={() => goTo(3)} style={styles.backBtn} hitSlop={8}>
-                  <Text style={styles.backBtnTxt}>←</Text>
+              <View style={styles.heroHeader}>
+                <Pressable onPress={() => goTo(3)} style={styles.heroBackBtn} hitSlop={8}>
+                  <Text style={styles.heroBackTxt}>←</Text>
                 </Pressable>
-                <View style={{ flex: 1 }}>
-                  <StepIndicator step={step} />
-                  <Text style={styles.headerTitle}>Combien de places ?</Text>
-                  <Text style={styles.headerSub}>
-                    {selectedVoyage.nombre_places_restantes} place{selectedVoyage.nombre_places_restantes > 1 ? "s" : ""} disponible{selectedVoyage.nombre_places_restantes > 1 ? "s" : ""}
-                  </Text>
-                </View>
+                <StepIndicator step={step} light />
+                <Text style={styles.heroTitle}>Combien de places ?</Text>
+                <Text style={styles.heroSub}>
+                  {selectedVoyage.nombre_places_restantes} place{selectedVoyage.nombre_places_restantes > 1 ? "s" : ""} disponible{selectedVoyage.nombre_places_restantes > 1 ? "s" : ""}
+                </Text>
               </View>
 
               <ScrollView
-                style={{ flex: 1 }}
+                style={styles.contentArea}
                 contentContainerStyle={styles.body}
                 showsVerticalScrollIndicator={false}
               >
-                {/* Recap voyage sélectionné */}
+                {/* Recap voyage */}
                 <Animated.View entering={FadeInDown.duration(280)} style={styles.recapCard}>
                   <View style={[styles.recapAccent, { backgroundColor: colors.primary }]} />
                   <View style={styles.recapBody}>
@@ -721,12 +1152,10 @@ export default function VoyagesScreen() {
                       <View style={styles.recapDotStart} />
                       <View style={{ flex: 1 }}>
                         <Text style={styles.recapCity}>{selectedVoyage.ville_depart}</Text>
-                        <Text style={styles.recapPoint} numberOfLines={1}>{selectedVoyage.point_depart || pointDepart}</Text>
                       </View>
                       <Text style={styles.recapArrow}>→</Text>
                       <View style={{ flex: 1, alignItems: "flex-end" }}>
                         <Text style={styles.recapCity}>{selectedVoyage.ville_arrivee}</Text>
-                        <Text style={styles.recapPoint} numberOfLines={1}>{selectedVoyage.point_arrivee || pointArrivee}</Text>
                       </View>
                       <View style={styles.recapDotEnd} />
                     </View>
@@ -743,30 +1172,97 @@ export default function VoyagesScreen() {
                   </View>
                 </Animated.View>
 
-                {/* Compteur de places */}
-                <Animated.View entering={FadeInDown.duration(280).delay(80)} style={styles.counterCard}>
+                {/* Points d'embarquement dynamiques + modifiables */}
+                <Animated.View entering={FadeInDown.duration(280).delay(40)} style={styles.embarkCard}>
+                  <Text style={styles.embarkCardTitle}>Points de trajet</Text>
+
                   <Pressable
-                    style={[styles.counterBtn, nombrePlaces <= 1 && styles.counterBtnOff]}
-                    onPress={() => setNombrePlaces((p) => Math.max(1, p - 1))}
+                    style={({ pressed }) => [styles.embarkRow, pressed && styles.embarkRowPressed]}
+                    onPress={() => setEditingEmbark("depart")}
+                  >
+                    <View style={styles.embarkDotStart} />
+                    <View style={{ flex: 1, gap: 1 }}>
+                      <Text style={styles.embarkLabel}>Départ</Text>
+                      <Text style={styles.embarkValue} numberOfLines={2}>{embarkDepart}</Text>
+                    </View>
+                    <View style={styles.embarkEditBtn}>
+                      <Text style={styles.embarkEditTxt}>✏️</Text>
+                    </View>
+                  </Pressable>
+
+                  <View style={styles.embarkDivider} />
+
+                  <Pressable
+                    style={({ pressed }) => [styles.embarkRow, pressed && styles.embarkRowPressed]}
+                    onPress={() => setEditingEmbark("arrivee")}
+                  >
+                    <View style={styles.embarkDotEnd} />
+                    <View style={{ flex: 1, gap: 1 }}>
+                      <Text style={styles.embarkLabel}>Arrivée</Text>
+                      <Text style={styles.embarkValue} numberOfLines={2}>{embarkArrivee}</Text>
+                    </View>
+                    <View style={styles.embarkEditBtn}>
+                      <Text style={styles.embarkEditTxt}>✏️</Text>
+                    </View>
+                  </Pressable>
+
+                  <View style={styles.embarkNote}>
+                    <Text style={styles.embarkNoteTxt}>
+                      ℹ️ Points officiels du chauffeur · Appuyez pour personnaliser
+                    </Text>
+                  </View>
+                </Animated.View>
+
+                {/* Grille sièges */}
+                <Animated.View entering={FadeInDown.duration(280).delay(100)} style={styles.seatCard}>
+                  <Text style={styles.seatCardTitle}>
+                    Sièges sélectionnés ({nombrePlaces}/{selectedVoyage.nombre_places_restantes})
+                  </Text>
+                  <SeatGrid total={selectedVoyage.nombre_places_restantes} selected={nombrePlaces} />
+                </Animated.View>
+
+                {/* Compteur */}
+                <Animated.View entering={FadeInDown.duration(280).delay(160)} style={styles.counterCard}>
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.counterBtn,
+                      nombrePlaces <= 1 && styles.counterBtnOff,
+                      pressed && nombrePlaces > 1 && { opacity: 0.75 },
+                    ]}
+                    onPress={() => {
+                      if (nombrePlaces > 1) {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        setNombrePlaces((p) => p - 1);
+                      }
+                    }}
                     disabled={nombrePlaces <= 1}
                   >
-                    <Text style={styles.counterBtnTxt}>−</Text>
+                    <Text style={[styles.counterBtnTxt, nombrePlaces <= 1 && styles.counterBtnTxtOff]}>−</Text>
                   </Pressable>
                   <View style={styles.counterCenter}>
                     <Text style={styles.counterNum}>{nombrePlaces}</Text>
                     <Text style={styles.counterLabel}>place{nombrePlaces > 1 ? "s" : ""}</Text>
                   </View>
                   <Pressable
-                    style={[styles.counterBtn, nombrePlaces >= 8 && styles.counterBtnOff]}
-                    onPress={() => setNombrePlaces((p) => Math.min(8, p + 1))}
+                    style={({ pressed }) => [
+                      styles.counterBtn,
+                      nombrePlaces >= 8 && styles.counterBtnOff,
+                      pressed && nombrePlaces < 8 && { opacity: 0.75 },
+                    ]}
+                    onPress={() => {
+                      if (nombrePlaces < 8) {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        setNombrePlaces((p) => Math.min(8, p + 1));
+                      }
+                    }}
                     disabled={nombrePlaces >= 8}
                   >
-                    <Text style={styles.counterBtnTxt}>+</Text>
+                    <Text style={[styles.counterBtnTxt, nombrePlaces >= 8 && styles.counterBtnTxtOff]}>+</Text>
                   </Pressable>
                 </Animated.View>
 
-                {/* Prix total estimé */}
-                <Animated.View entering={FadeInDown.duration(280).delay(160)} style={styles.totalRow}>
+                {/* Total */}
+                <Animated.View entering={FadeInDown.duration(280).delay(220)} style={styles.totalRow}>
                   <Text style={styles.totalLabel}>Total estimé</Text>
                   <Text style={styles.totalAmt}>
                     {formatFCFA(selectedVoyage.prix_par_place * nombrePlaces)}
@@ -777,7 +1273,10 @@ export default function VoyagesScreen() {
               <View style={styles.ctaArea}>
                 <Pressable
                   style={({ pressed }) => [styles.ctaBtn, pressed && { opacity: 0.85 }]}
-                  onPress={handleReserver}
+                  onPress={() => {
+                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                    handleReserver();
+                  }}
                 >
                   <Text style={styles.ctaTxt}>
                     Réserver · {nombrePlaces} place{nombrePlaces > 1 ? "s" : ""}
@@ -787,12 +1286,31 @@ export default function VoyagesScreen() {
                   </Text>
                 </Pressable>
               </View>
+
+              {/* Sheets d'édition des points */}
+              <EmbarkEditSheet
+                visible={editingEmbark === "depart"}
+                title={`Point de départ · ${selectedVoyage.ville_depart}`}
+                value={embarkDepart}
+                villeNom={selectedVoyage.ville_depart}
+                onConfirm={setEmbarkDepart}
+                onClose={() => setEditingEmbark(null)}
+              />
+              <EmbarkEditSheet
+                visible={editingEmbark === "arrivee"}
+                title={`Point d'arrivée · ${selectedVoyage.ville_arrivee}`}
+                value={embarkArrivee}
+                villeNom={selectedVoyage.ville_arrivee}
+                onConfirm={setEmbarkArrivee}
+                onClose={() => setEditingEmbark(null)}
+              />
             </View>
           )}
+
         </Animated.View>
       </View>
 
-      {/* ── Modals ─────────────────────────────────────────────── */}
+      {/* Modals globaux */}
       <CityPickerModal
         visible={showDepartPicker}
         title="Ville de départ"
@@ -816,44 +1334,40 @@ export default function VoyagesScreen() {
   );
 }
 
-// ── Styles ────────────────────────────────────────────────────────────────────
+// ── Styles ─────────────────────────────────────────────────────────────────────
 const PT = Platform.OS === "ios" ? 56 : 40;
 const PB = Platform.OS === "ios" ? 36 : 24;
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.surface },
+  root:          { flex: 1, backgroundColor: colors.surface },
   stepContainer: { flex: 1, overflow: "hidden" },
 
-  // Header
-  header: {
+  // ── Hero header
+  heroHeader: {
+    backgroundColor: colors.primary,
     paddingHorizontal: spacing["2xl"],
     paddingTop: PT,
-    paddingBottom: spacing.xl,
-    backgroundColor: colors.white,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    ...shadows.sm,
+    paddingBottom: spacing["2xl"],
   },
-  headerTitle: {
+  heroBackBtn:  { marginBottom: spacing.xs, alignSelf: "flex-start" },
+  heroBackTxt: {
+    fontSize: 22, fontFamily: typography.fontFamily.bold, color: colors.white,
+  },
+  heroTitle: {
     fontSize: typography.fontSize["2xl"],
-    fontFamily: typography.fontFamily.bold,
-    color: colors.textPrimary,
+    fontFamily: typography.fontFamily.extraBold,
+    color: colors.white,
     marginTop: spacing.xs,
   },
-  headerSub: {
+  heroSub: {
     fontSize: typography.fontSize.sm,
     fontFamily: typography.fontFamily.regular,
-    color: colors.textSecondary,
+    color: "rgba(255,255,255,0.8)",
     marginTop: 3,
   },
-  backBtn: { marginBottom: spacing.xs, alignSelf: "flex-start" },
-  backBtnTxt: {
-    fontSize: 22,
-    fontFamily: typography.fontFamily.bold,
-    color: colors.primary,
-  },
 
-  // Body
+  // ── Content
+  contentArea: { flex: 1, backgroundColor: colors.surface },
   body: {
     paddingHorizontal: spacing["2xl"],
     paddingTop: spacing["2xl"],
@@ -861,27 +1375,28 @@ const styles = StyleSheet.create({
     gap: spacing.xl,
   },
 
-  // GPS card
+  // ── GPS card
   gpsCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
+    flexDirection: "row", alignItems: "center", gap: spacing.md,
     backgroundColor: colors.white,
-    borderRadius: radii.xl,
-    padding: spacing.lg,
-    borderWidth: 1.5,
-    borderColor: colors.border,
+    borderRadius: radii.xl, padding: spacing.lg,
+    borderWidth: 1.5, borderColor: colors.border,
     ...shadows.sm,
   },
   gpsCardFound:  { borderColor: `${colors.primary}50`, backgroundColor: `${colors.primary}08` },
   gpsCardDenied: { borderColor: colors.border },
+  gpsIconOuter: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
+  gpsPulseRing: {
+    position: "absolute", width: 52, height: 52, borderRadius: 26,
+    borderWidth: 2, borderColor: colors.primary,
+  },
   gpsIconWrap: {
     width: 44, height: 44, borderRadius: 22,
     backgroundColor: `${colors.primary}15`,
     alignItems: "center", justifyContent: "center",
   },
   gpsIconWrapFound: { backgroundColor: colors.primary },
-  gpsEmoji: { fontSize: 20 },
+  gpsEmoji:  { fontSize: 20 },
   gpsLabel: {
     fontSize: typography.fontSize.base,
     fontFamily: typography.fontFamily.semiBold,
@@ -891,37 +1406,32 @@ const styles = StyleSheet.create({
   gpsHint: {
     fontSize: typography.fontSize.xs,
     fontFamily: typography.fontFamily.regular,
-    color: colors.textMuted,
-    marginTop: 2,
+    color: colors.textMuted, marginTop: 2,
   },
   gpsRefresh: { fontSize: 20, color: colors.textMuted, fontFamily: typography.fontFamily.bold },
 
-  // Fields
-  field: { gap: spacing.sm },
+  // ── Fields
+  field:      { gap: spacing.sm },
   fieldLabel: {
     fontSize: typography.fontSize.sm,
     fontFamily: typography.fontFamily.semiBold,
     color: colors.textSecondary,
   },
-  dot: { color: colors.primary },
+  dot:       { color: colors.primary },
   fieldHint: {
     fontSize: typography.fontSize.xs,
     fontFamily: typography.fontFamily.regular,
     color: colors.textMuted,
   },
   cityBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
-    backgroundColor: colors.white,
-    borderRadius: radii.xl,
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.lg,
+    flexDirection: "row", alignItems: "center", gap: spacing.md,
+    backgroundColor: colors.white, borderRadius: radii.xl,
+    borderWidth: 1.5, borderColor: colors.border,
+    paddingHorizontal: spacing.lg, paddingVertical: spacing.lg,
     ...shadows.sm,
   },
-  cityIcon: { fontSize: 20 },
+  cityBtnFilled:   { borderColor: `${colors.primary}50` },
+  cityIcon:        { fontSize: 20 },
   cityTxt: {
     flex: 1,
     fontSize: typography.fontSize.lg,
@@ -940,38 +1450,83 @@ const styles = StyleSheet.create({
     alignItems: "center", justifyContent: "center",
   },
   chevron: { fontSize: 10, color: colors.textMuted },
+  cityCheckWrap: {
+    width: 28, height: 28, borderRadius: 14,
+    backgroundColor: `${colors.primary}15`,
+    borderWidth: 1, borderColor: `${colors.primary}40`,
+    alignItems: "center", justifyContent: "center",
+  },
+  cityCheck: {
+    fontSize: 12, color: colors.primary, fontFamily: typography.fontFamily.bold,
+  },
   textInput: {
-    backgroundColor: colors.white,
-    borderWidth: 1.5,
-    borderColor: colors.border,
+    backgroundColor: colors.white, borderWidth: 1.5, borderColor: colors.border,
     borderRadius: radii.xl,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
     fontSize: typography.fontSize.base,
     fontFamily: typography.fontFamily.regular,
     color: colors.textPrimary,
   },
   textInputFilled: { borderColor: `${colors.primary}50` },
 
-  // Route preview (étape 2)
-  routePreview: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-    backgroundColor: `${colors.primary}08`,
-    borderRadius: radii.xl,
-    padding: spacing.lg,
-    borderWidth: 1,
-    borderColor: `${colors.primary}20`,
+  // ── Date chips
+  dateChipsRow: { flexDirection: "row", gap: spacing.sm },
+  dateChip: {
+    flex: 1, alignItems: "center", justifyContent: "center",
+    paddingVertical: spacing.md,
+    borderRadius: radii.xl, borderWidth: 1.5, borderColor: colors.border,
+    backgroundColor: colors.white, gap: 2,
   },
-  rpDotStart: {
+  dateChipActive:  { borderColor: colors.primary, backgroundColor: `${colors.primary}10` },
+  dateChipTxt: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.medium,
+    color: colors.textSecondary,
+  },
+  dateChipTxtActive: { color: colors.primary, fontFamily: typography.fontFamily.bold },
+  dateChipSub: {
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamily.regular,
+    color: colors.primary,
+    textTransform: "capitalize",
+  },
+
+  // ── Step 2: résumé départ
+  departSummary: {
+    flexDirection: "row", alignItems: "center", gap: spacing.sm,
+    backgroundColor: colors.white, borderRadius: radii.xl, padding: spacing.lg,
+    borderWidth: 1, borderColor: colors.border, ...shadows.sm,
+  },
+  dsDot: {
     width: 10, height: 10, borderRadius: 5,
     backgroundColor: colors.primary, flexShrink: 0,
   },
-  rpDotEnd: {
-    width: 10, height: 10, borderRadius: 5,
-    backgroundColor: colors.black, flexShrink: 0,
+  dsCityTxt: {
+    fontSize: typography.fontSize.base,
+    fontFamily: typography.fontFamily.bold,
+    color: colors.textPrimary,
   },
+  dsPointTxt: {
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamily.regular,
+    color: colors.textSecondary,
+  },
+  swapBtn: {
+    width: 34, height: 34, borderRadius: 17,
+    backgroundColor: `${colors.primary}12`,
+    borderWidth: 1, borderColor: `${colors.primary}30`,
+    alignItems: "center", justifyContent: "center",
+  },
+  swapTxt: { fontSize: 16, color: colors.primary, fontFamily: typography.fontFamily.bold },
+
+  // ── Route preview (step 2)
+  routePreview: {
+    flexDirection: "row", alignItems: "center", gap: spacing.sm,
+    backgroundColor: `${colors.primary}08`, borderRadius: radii.xl, padding: spacing.lg,
+    borderWidth: 1, borderColor: `${colors.primary}20`,
+  },
+  rpDotStart: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.primary, flexShrink: 0 },
+  rpDotEnd:   { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.black, flexShrink: 0 },
   rpCity: {
     fontSize: typography.fontSize.sm,
     fontFamily: typography.fontFamily.bold,
@@ -983,29 +1538,20 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   rpArrow: {
-    fontSize: typography.fontSize.base,
-    color: colors.primary,
-    fontFamily: typography.fontFamily.bold,
+    fontSize: typography.fontSize.base, color: colors.primary, fontFamily: typography.fontFamily.bold,
   },
 
-  // CTA
+  // ── CTA
   ctaArea: {
     paddingHorizontal: spacing["2xl"],
-    paddingBottom: PB,
-    paddingTop: spacing.lg,
+    paddingBottom: PB, paddingTop: spacing.lg,
     backgroundColor: colors.white,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
+    borderTopWidth: 1, borderTopColor: colors.border,
   },
   ctaBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: spacing.sm,
-    backgroundColor: colors.primary,
-    borderRadius: radii.xl,
-    paddingVertical: spacing.xl,
-    ...shadows.md,
+    flexDirection: "row", alignItems: "center", justifyContent: "center",
+    gap: spacing.sm, backgroundColor: colors.primary, borderRadius: radii.xl,
+    paddingVertical: spacing.xl, ...shadows.md,
   },
   ctaBtnOff: { opacity: 0.35 },
   ctaTxt: {
@@ -1014,32 +1560,27 @@ const styles = StyleSheet.create({
     color: colors.white,
   },
   ctaArrow: {
-    fontSize: typography.fontSize.lg,
-    fontFamily: typography.fontFamily.bold,
+    fontSize: typography.fontSize.lg, fontFamily: typography.fontFamily.bold,
     color: `${colors.white}cc`,
   },
   ctaPrice: {
-    fontSize: typography.fontSize.sm,
-    fontFamily: typography.fontFamily.bold,
+    fontSize: typography.fontSize.sm, fontFamily: typography.fontFamily.bold,
     color: `${colors.white}cc`,
     backgroundColor: "rgba(255,255,255,0.18)",
-    borderRadius: radii.full,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
+    borderRadius: radii.full, paddingHorizontal: spacing.sm, paddingVertical: 2,
   },
 
-  // Results header
+  // ── Results header (step 3)
   resultsHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
-    paddingHorizontal: spacing["2xl"],
-    paddingTop: PT,
-    paddingBottom: spacing.xl,
+    flexDirection: "row", alignItems: "center", gap: spacing.md,
+    paddingHorizontal: spacing["2xl"], paddingTop: PT, paddingBottom: spacing.xl,
     backgroundColor: colors.white,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
     ...shadows.sm,
+  },
+  backBtn: { marginBottom: spacing.xs, alignSelf: "flex-start" },
+  backBtnTxt: {
+    fontSize: 22, fontFamily: typography.fontFamily.bold, color: colors.primary,
   },
   resultsTitle: {
     fontSize: typography.fontSize.lg,
@@ -1050,15 +1591,12 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.xs,
     fontFamily: typography.fontFamily.regular,
     color: colors.textSecondary,
-    marginTop: 2,
+    marginTop: 2, textTransform: "capitalize",
   },
   modifyBtn: {
-    backgroundColor: `${colors.primary}12`,
-    borderRadius: radii.full,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-    borderWidth: 1,
-    borderColor: `${colors.primary}30`,
+    backgroundColor: `${colors.primary}12`, borderRadius: radii.full,
+    paddingHorizontal: spacing.lg, paddingVertical: spacing.sm,
+    borderWidth: 1, borderColor: `${colors.primary}30`,
   },
   modifyBtnTxt: {
     fontSize: typography.fontSize.sm,
@@ -1066,22 +1604,33 @@ const styles = StyleSheet.create({
     color: colors.primary,
   },
 
-  // List
-  listContent: { padding: spacing.xl, gap: spacing.lg, paddingBottom: 40 },
+  // ── List
+  listContent:   { padding: spacing.xl, gap: spacing.lg, paddingBottom: 40 },
+  listHeaderRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.sm },
   listHint: {
     fontSize: typography.fontSize.sm,
     fontFamily: typography.fontFamily.medium,
     color: colors.textSecondary,
-    marginBottom: spacing.sm,
+  },
+  listDateBadge: {
+    backgroundColor: `${colors.primary}10`,
+    borderRadius: radii.full,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: `${colors.primary}25`,
+  },
+  listDateBadgeTxt: {
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamily.semiBold,
+    color: colors.primary,
+    textTransform: "capitalize",
   },
 
-  // State boxes
+  // ── State boxes
   stateBox: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    padding: spacing["2xl"],
-    gap: spacing.md,
+    flex: 1, alignItems: "center", justifyContent: "center",
+    padding: spacing["2xl"], gap: spacing.md,
   },
   stateEmoji: { fontSize: 52, marginBottom: spacing.sm },
   stateTitle: {
@@ -1092,57 +1641,53 @@ const styles = StyleSheet.create({
   stateTxt: {
     fontSize: typography.fontSize.sm,
     fontFamily: typography.fontFamily.regular,
-    color: colors.textMuted,
-    textAlign: "center",
-    lineHeight: 20,
+    color: colors.textMuted, textAlign: "center", lineHeight: 20,
   },
   refreshBtn: {
     marginTop: spacing.sm,
-    backgroundColor: `${colors.primary}12`,
-    borderRadius: radii.full,
-    paddingHorizontal: spacing["2xl"],
-    paddingVertical: spacing.md,
-    borderWidth: 1,
-    borderColor: `${colors.primary}30`,
+    backgroundColor: `${colors.primary}12`, borderRadius: radii.full,
+    paddingHorizontal: spacing["2xl"], paddingVertical: spacing.md,
+    borderWidth: 1, borderColor: `${colors.primary}30`,
   },
   refreshBtnTxt: {
     fontSize: typography.fontSize.base,
     fontFamily: typography.fontFamily.semiBold,
     color: colors.primary,
   },
+  changeDateBtn: {
+    backgroundColor: colors.white, borderRadius: radii.full,
+    paddingHorizontal: spacing["2xl"], paddingVertical: spacing.md,
+    borderWidth: 1.5, borderColor: colors.border,
+  },
+  changeDateBtnTxt: {
+    fontSize: typography.fontSize.base,
+    fontFamily: typography.fontFamily.medium,
+    color: colors.textSecondary,
+  },
 
-  // Voyage select card
+  // ── VoyageSelectCard
   vCard: {
-    backgroundColor: colors.white,
-    borderRadius: radii.xl,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: colors.border,
-    ...shadows.md,
+    backgroundColor: colors.white, borderRadius: radii.xl, overflow: "hidden",
+    flexDirection: "row", borderWidth: 1, borderColor: colors.border, ...shadows.md,
   },
   vCardFull:    { opacity: 0.5 },
   vCardPressed: { opacity: 0.88 },
-  vAccent: { height: 4 },
-  vBody:   { padding: spacing.xl, gap: spacing.md },
-  vTop: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
+  vLeftAccent:  { width: 4 },
+  vBody:        { flex: 1, padding: spacing.xl, gap: spacing.md },
+  vTopRow: {
+    flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start",
   },
+  vTopRight: { alignItems: "flex-end" },
   vTime: {
     fontSize: typography.fontSize["3xl"],
     fontFamily: typography.fontFamily.extraBold,
-    color: colors.textPrimary,
-    lineHeight: 36,
+    color: colors.textPrimary, lineHeight: 36,
   },
   vDate: {
     fontSize: typography.fontSize.xs,
     fontFamily: typography.fontFamily.medium,
-    color: colors.textSecondary,
-    textTransform: "capitalize",
-    marginTop: 2,
+    color: colors.textSecondary, textTransform: "capitalize", marginTop: 2,
   },
-  vTopRight: { alignItems: "flex-end" },
   vPrice: {
     fontSize: typography.fontSize["2xl"],
     fontFamily: typography.fontFamily.extraBold,
@@ -1154,7 +1699,7 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
   },
   vRoute: { gap: 2 },
-  vStop: { flexDirection: "row", gap: spacing.md, alignItems: "flex-start" },
+  vStop:  { flexDirection: "row", gap: spacing.md, alignItems: "flex-start" },
   vDotStart: {
     width: 12, height: 12, borderRadius: 6,
     backgroundColor: colors.primary, marginTop: 4,
@@ -1166,20 +1711,14 @@ const styles = StyleSheet.create({
     borderWidth: 2, borderColor: `${colors.black}40`,
   },
   vConnector: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingLeft: 5,
-    gap: spacing.sm,
-    marginVertical: 2,
+    flexDirection: "row", alignItems: "center",
+    paddingLeft: 5, gap: spacing.sm, marginVertical: 2,
   },
   vLine: { width: 2, height: 20, backgroundColor: colors.border },
   vDistPill: {
-    backgroundColor: colors.surface,
-    borderRadius: radii.full,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 1,
-    borderWidth: 1,
-    borderColor: colors.border,
+    backgroundColor: colors.surface, borderRadius: radii.full,
+    paddingHorizontal: spacing.sm, paddingVertical: 1,
+    borderWidth: 1, borderColor: colors.border,
   },
   vDistTxt: {
     fontSize: typography.fontSize.xs,
@@ -1194,23 +1733,16 @@ const styles = StyleSheet.create({
   vPoint: {
     fontSize: typography.fontSize.xs,
     fontFamily: typography.fontFamily.regular,
-    color: colors.textSecondary,
-    marginTop: 1,
+    color: colors.textSecondary, marginTop: 1,
   },
   vFooter: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: spacing.sm,
-    paddingTop: spacing.sm,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    gap: spacing.sm, paddingTop: spacing.sm,
+    borderTopWidth: 1, borderTopColor: colors.border,
   },
   vPlaceBadge: {
-    backgroundColor: colors.successBg,
-    borderRadius: radii.full,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 4,
+    backgroundColor: colors.successBg, borderRadius: radii.full,
+    paddingHorizontal: spacing.md, paddingVertical: 4,
   },
   vPlaceBadgeFull: { backgroundColor: colors.errorBg },
   vPlaceBadgeWarn: { backgroundColor: `${colors.orangeOrange}18` },
@@ -1221,13 +1753,10 @@ const styles = StyleSheet.create({
   },
   vPlaceTxtFull: { color: colors.error },
   vPlaceTxtWarn: { color: colors.orangeOrange },
-  vTags: { flexDirection: "row", gap: spacing.xs, flex: 1 },
-  vTag: { fontSize: 15 },
+  vTags:        { flexDirection: "row", gap: spacing.xs, flex: 1 },
+  vTag:         { fontSize: 15 },
   vSelectBtn: {
-    backgroundColor: colors.primary,
-    borderRadius: radii.full,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 5,
+    borderRadius: radii.full, paddingHorizontal: spacing.md, paddingVertical: 5,
   },
   vSelectTxt: {
     fontSize: typography.fontSize.xs,
@@ -1235,21 +1764,15 @@ const styles = StyleSheet.create({
     color: colors.white,
   },
 
-  // Recap card (étape 4)
+  // ── Recap card (step 4)
   recapCard: {
-    backgroundColor: colors.white,
-    borderRadius: radii.xl,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: colors.border,
-    ...shadows.sm,
+    backgroundColor: colors.white, borderRadius: radii.xl, overflow: "hidden",
+    borderWidth: 1, borderColor: colors.border, ...shadows.sm,
   },
   recapAccent: { height: 4 },
-  recapBody: { padding: spacing.xl, gap: spacing.md },
+  recapBody:   { padding: spacing.xl, gap: spacing.md },
   recapRoute: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
+    flexDirection: "row", alignItems: "center", gap: spacing.sm,
   },
   recapDotStart: {
     width: 10, height: 10, borderRadius: 5,
@@ -1260,41 +1783,26 @@ const styles = StyleSheet.create({
     backgroundColor: colors.black, flexShrink: 0,
   },
   recapCity: {
-    fontSize: typography.fontSize.sm,
+    fontSize: typography.fontSize.base,
     fontFamily: typography.fontFamily.bold,
     color: colors.textPrimary,
   },
-  recapPoint: {
-    fontSize: typography.fontSize.xs,
-    fontFamily: typography.fontFamily.regular,
-    color: colors.textSecondary,
-  },
   recapArrow: {
-    fontSize: typography.fontSize.base,
-    color: colors.textMuted,
-    fontFamily: typography.fontFamily.bold,
+    fontSize: typography.fontSize.base, color: colors.textMuted, fontFamily: typography.fontFamily.bold,
   },
   recapMeta: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingTop: spacing.sm,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border,
   },
   recapTimeBadge: {
-    backgroundColor: colors.surface,
-    borderRadius: radii.full,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 4,
-    borderWidth: 1,
-    borderColor: colors.border,
+    backgroundColor: colors.surface, borderRadius: radii.full,
+    paddingHorizontal: spacing.md, paddingVertical: 4,
+    borderWidth: 1, borderColor: colors.border,
   },
   recapTime: {
     fontSize: typography.fontSize.xs,
     fontFamily: typography.fontFamily.medium,
-    color: colors.textSecondary,
-    textTransform: "capitalize",
+    color: colors.textSecondary, textTransform: "capitalize",
   },
   recapPrice: {
     fontSize: typography.fontSize.base,
@@ -1302,17 +1810,85 @@ const styles = StyleSheet.create({
     color: colors.primary,
   },
 
-  // Counter (étape 4)
-  counterCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: colors.white,
-    borderRadius: radii.xl,
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    padding: spacing.xl,
+  // ── Embark card (step 4 — nouveau)
+  embarkCard: {
+    backgroundColor: colors.white, borderRadius: radii.xl,
+    borderWidth: 1, borderColor: colors.border, overflow: "hidden",
     ...shadows.sm,
+  },
+  embarkCardTitle: {
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamily.bold,
+    color: colors.textMuted,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.sm,
+  },
+  embarkRow: {
+    flexDirection: "row", alignItems: "center", gap: spacing.md,
+    paddingHorizontal: spacing.xl, paddingVertical: spacing.lg,
+  },
+  embarkRowPressed: { backgroundColor: `${colors.primary}06` },
+  embarkDotStart: {
+    width: 12, height: 12, borderRadius: 6,
+    backgroundColor: colors.primary, flexShrink: 0,
+    borderWidth: 2, borderColor: `${colors.primary}35`,
+  },
+  embarkDotEnd: {
+    width: 12, height: 12, borderRadius: 6,
+    backgroundColor: colors.black, flexShrink: 0,
+    borderWidth: 2, borderColor: `${colors.black}35`,
+  },
+  embarkLabel: {
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamily.medium,
+    color: colors.textMuted,
+  },
+  embarkValue: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.semiBold,
+    color: colors.textPrimary,
+  },
+  embarkEditBtn: {
+    width: 34, height: 34, borderRadius: 17,
+    backgroundColor: `${colors.primary}10`,
+    borderWidth: 1, borderColor: `${colors.primary}25`,
+    alignItems: "center", justifyContent: "center",
+  },
+  embarkEditTxt: { fontSize: 14 },
+  embarkDivider: {
+    height: 1, backgroundColor: colors.border,
+    marginHorizontal: spacing.xl,
+  },
+  embarkNote: {
+    paddingHorizontal: spacing.xl, paddingTop: spacing.sm, paddingBottom: spacing.md,
+    backgroundColor: `${colors.primary}04`,
+    borderTopWidth: 1, borderTopColor: colors.border,
+  },
+  embarkNoteTxt: {
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamily.regular,
+    color: colors.textMuted,
+  },
+
+  // ── Seat card
+  seatCard: {
+    backgroundColor: colors.white, borderRadius: radii.xl, padding: spacing.xl,
+    borderWidth: 1, borderColor: colors.border, alignItems: "center", ...shadows.sm,
+  },
+  seatCardTitle: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.semiBold,
+    color: colors.textSecondary, marginBottom: spacing.xs,
+  },
+
+  // ── Counter (step 4)
+  counterCard: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    backgroundColor: colors.white, borderRadius: radii.xl,
+    borderWidth: 1.5, borderColor: colors.border, padding: spacing.xl, ...shadows.sm,
   },
   counterBtn: {
     width: 52, height: 52, borderRadius: 26,
@@ -1320,19 +1896,16 @@ const styles = StyleSheet.create({
     borderWidth: 1.5, borderColor: `${colors.primary}30`,
     alignItems: "center", justifyContent: "center",
   },
-  counterBtnOff: { backgroundColor: colors.surface, borderColor: colors.border },
+  counterBtnOff:    { backgroundColor: colors.surface, borderColor: colors.border },
   counterBtnTxt: {
-    fontSize: 22,
-    fontFamily: typography.fontFamily.bold,
-    color: colors.primary,
-    lineHeight: 28,
+    fontSize: 22, fontFamily: typography.fontFamily.bold, color: colors.primary, lineHeight: 28,
   },
-  counterCenter: { alignItems: "center" },
+  counterBtnTxtOff: { color: colors.textMuted },
+  counterCenter:    { alignItems: "center" },
   counterNum: {
     fontSize: typography.fontSize["4xl"],
     fontFamily: typography.fontFamily.extraBold,
-    color: colors.primary,
-    lineHeight: 48,
+    color: colors.primary, lineHeight: 48,
   },
   counterLabel: {
     fontSize: typography.fontSize.sm,
@@ -1340,16 +1913,11 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
 
-  // Total (étape 4)
+  // ── Total (step 4)
   totalRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    backgroundColor: colors.white,
-    borderRadius: radii.xl,
-    padding: spacing.xl,
-    borderWidth: 1,
-    borderColor: colors.border,
+    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
+    backgroundColor: colors.white, borderRadius: radii.xl, padding: spacing.xl,
+    borderWidth: 1, borderColor: colors.border,
   },
   totalLabel: {
     fontSize: typography.fontSize.base,
@@ -1362,32 +1930,23 @@ const styles = StyleSheet.create({
     color: colors.primary,
   },
 
-  // ── Modal city picker ──────────────────────────────────────────
+  // ── Modal city picker
   modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "flex-end",
+    flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end",
   },
   modalSheet: {
     backgroundColor: colors.white,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    paddingBottom: PB,
-    ...shadows.md,
+    borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    paddingBottom: PB, ...shadows.md,
   },
   modalHandle: {
     width: 44, height: 4, borderRadius: 2,
-    backgroundColor: colors.border,
-    alignSelf: "center", marginTop: 12, marginBottom: 8,
+    backgroundColor: colors.border, alignSelf: "center", marginTop: 12, marginBottom: 8,
   },
   modalHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: spacing["2xl"],
-    paddingVertical: spacing.lg,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingHorizontal: spacing["2xl"], paddingVertical: spacing.lg,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
   },
   modalTitle: {
     fontSize: typography.fontSize.xl,
@@ -1406,48 +1965,37 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   modalSearchRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-    marginHorizontal: spacing["2xl"],
-    marginVertical: spacing.md,
-    backgroundColor: colors.surface,
-    borderRadius: radii.xl,
+    flexDirection: "row", alignItems: "center", gap: spacing.sm,
+    marginHorizontal: spacing["2xl"], marginVertical: spacing.md,
+    backgroundColor: colors.surface, borderRadius: radii.xl,
     borderWidth: 1, borderColor: colors.border,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.lg, paddingVertical: spacing.sm,
   },
   modalSearchIcon: { fontSize: 16 },
   modalSearchInput: {
     flex: 1,
     fontSize: typography.fontSize.base,
     fontFamily: typography.fontFamily.regular,
-    color: colors.textPrimary,
-    paddingVertical: spacing.xs,
+    color: colors.textPrimary, paddingVertical: spacing.xs,
   },
   modalClear: {
-    fontSize: typography.fontSize.sm,
-    color: colors.textMuted,
-    fontFamily: typography.fontFamily.bold,
-    paddingHorizontal: spacing.xs,
+    fontSize: typography.fontSize.sm, color: colors.textMuted,
+    fontFamily: typography.fontFamily.bold, paddingHorizontal: spacing.xs,
   },
-  modalEmpty: { padding: spacing["2xl"], alignItems: "center" },
+  modalEmpty:    { padding: spacing["2xl"], alignItems: "center" },
   modalEmptyTxt: {
     fontSize: typography.fontSize.base,
     fontFamily: typography.fontFamily.regular,
     color: colors.textMuted,
   },
   modalItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: spacing["2xl"],
-    paddingVertical: spacing.lg,
+    flexDirection: "row", alignItems: "center",
+    paddingHorizontal: spacing["2xl"], paddingVertical: spacing.lg,
     gap: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: `${colors.border}60`,
+    borderBottomWidth: 1, borderBottomColor: `${colors.border}60`,
   },
-  modalItemPressed: { backgroundColor: `${colors.primary}08` },
-  modalItemPin:  { fontSize: 16 },
+  modalItemPressed:  { backgroundColor: `${colors.primary}08` },
+  modalItemPin:      { fontSize: 16 },
   modalItemTxt: {
     flex: 1,
     fontSize: typography.fontSize.base,
@@ -1455,34 +2003,25 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
   modalItemChevron: {
-    fontSize: 22,
-    color: colors.textMuted,
-    fontFamily: typography.fontFamily.regular,
+    fontSize: 22, color: colors.textMuted, fontFamily: typography.fontFamily.regular,
   },
 
-  // ── Modal over capacity ────────────────────────────────────────
+  // ── Modal over capacity
   ocOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.55)",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: spacing["2xl"],
+    flex: 1, backgroundColor: "rgba(0,0,0,0.55)",
+    alignItems: "center", justifyContent: "center", padding: spacing["2xl"],
   },
   ocCard: {
-    backgroundColor: colors.white,
-    borderRadius: radii["2xl"],
-    padding: spacing["3xl"],
-    width: "100%",
-    alignItems: "center",
-    gap: spacing.lg,
-    ...shadows.lg,
+    backgroundColor: colors.white, borderRadius: radii["2xl"],
+    padding: spacing["3xl"], width: "100%", alignItems: "center",
+    gap: spacing.lg, ...shadows.lg,
   },
   ocIconWrap: {
     width: 64, height: 64, borderRadius: 32,
     backgroundColor: colors.warningBg,
     alignItems: "center", justifyContent: "center",
   },
-  ocIcon: { fontSize: 30 },
+  ocIcon:  { fontSize: 30 },
   ocTitle: {
     fontSize: typography.fontSize["2xl"],
     fontFamily: typography.fontFamily.bold,
@@ -1491,20 +2030,12 @@ const styles = StyleSheet.create({
   ocBody: {
     fontSize: typography.fontSize.base,
     fontFamily: typography.fontFamily.regular,
-    color: colors.textSecondary,
-    textAlign: "center",
-    lineHeight: 22,
+    color: colors.textSecondary, textAlign: "center", lineHeight: 22,
   },
-  ocBold: {
-    fontFamily: typography.fontFamily.bold,
-    color: colors.textPrimary,
-  },
+  ocBold: { fontFamily: typography.fontFamily.bold, color: colors.textPrimary },
   ocBtnPrimary: {
-    width: "100%",
-    backgroundColor: colors.primary,
-    borderRadius: radii.full,
-    paddingVertical: spacing.lg,
-    alignItems: "center",
+    width: "100%", backgroundColor: colors.primary, borderRadius: radii.full,
+    paddingVertical: spacing.lg, alignItems: "center",
   },
   ocBtnPrimaryTxt: {
     fontSize: typography.fontSize.base,
@@ -1512,13 +2043,9 @@ const styles = StyleSheet.create({
     color: colors.white,
   },
   ocBtnSecondary: {
-    width: "100%",
-    backgroundColor: colors.surface,
-    borderRadius: radii.full,
-    paddingVertical: spacing.md,
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: colors.border,
+    width: "100%", backgroundColor: colors.surface, borderRadius: radii.full,
+    paddingVertical: spacing.md, alignItems: "center",
+    borderWidth: 1, borderColor: colors.border,
   },
   ocBtnSecondaryTxt: {
     fontSize: typography.fontSize.base,

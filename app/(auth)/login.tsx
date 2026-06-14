@@ -17,6 +17,7 @@ import { loginSchema, type LoginForm } from "@/src/utils/validators";
 import { getErrorCode, getErrorMessage } from "@/src/utils/error-handler";
 import { Button } from "@/src/components/ui/Button";
 import { Input } from "@/src/components/ui/Input";
+import { PhoneInput } from "@/src/components/ui/PhoneInput";
 import { useToast } from "@/src/components/common/Toast";
 import { colors, typography, spacing } from "@/src/theme";
 
@@ -75,16 +76,12 @@ export default function LoginScreen() {
             name="telephone"
             control={control}
             render={({ field: { onChange, onBlur, value } }) => (
-              <Input
+              <PhoneInput
                 label={t("auth.login.phone_label")}
-                placeholder={t("auth.login.phone_placeholder")}
                 value={value}
                 onChangeText={onChange}
                 onBlur={onBlur}
                 error={errors.telephone?.message}
-                keyboardType="phone-pad"
-                autoComplete="tel"
-                testID="phone-input"
               />
             )}
           />

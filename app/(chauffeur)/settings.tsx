@@ -12,6 +12,7 @@ import {
   Alert,
   Image,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import {
@@ -22,10 +23,13 @@ import {
   useDeleteVehicule,
   useUpdateChauffeurProfile,
   useUploadDocuments,
+  useUploadVehiculePhoto,
 } from "@/src/hooks/useChauffeur";
 import { getErrorMessage } from "@/src/utils/error-handler";
 import { useToast } from "@/src/components/common/Toast";
+import { DatePickerField } from "@/src/components/ui/DatePickerField";
 import { colors, typography, spacing, radii, shadows } from "@/src/theme";
+import { resolveMediaUrl } from "@/src/constants/app";
 import type { TypeVehicule, Vehicule } from "@/src/api/types";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -64,6 +68,7 @@ const EMPTY_VEHICULE: VehiculeForm = {
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
 export default function ChauffeurSettingsScreen() {
+  const insets = useSafeAreaInsets();
   const { showToast } = useToast();
 
   const { data: chauffeur, isLoading: chauffeurLoading } = useMyChauffeurProfile();
@@ -72,6 +77,7 @@ export default function ChauffeurSettingsScreen() {
   const { mutateAsync: updateProfile, isPending: updatingProfile } = useUpdateChauffeurProfile();
   const { mutateAsync: uploadDocs, isPending: uploadingDocs } = useUploadDocuments();
   const { mutateAsync: addVehicule, isPending: adding } = useAddVehicule();
+  const { mutateAsync: uploadVehiculePhoto } = useUploadVehiculePhoto();
   const { mutateAsync: updateVehicule, isPending: updating } = useUpdateVehicule();
   const { mutateAsync: deleteVehicule, isPending: deleting } = useDeleteVehicule();
 
@@ -89,6 +95,7 @@ export default function ChauffeurSettingsScreen() {
   // Add vehicle modal
   const [showAddModal, setShowAddModal] = useState(false);
   const [addForm, setAddForm] = useState<VehiculeForm>(EMPTY_VEHICULE);
+  const [addPhoto, setAddPhoto] = useState<string | null>(null);
 
   // Edit vehicle modal
   const [editTarget, setEditTarget] = useState<Vehicule | null>(null);
@@ -119,15 +126,63 @@ export default function ChauffeurSettingsScreen() {
     }
   };
 
-  const pickImage = async (setter: (uri: string) => void) => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"],
-      allowsEditing: true,
-      quality: 0.8,
-    });
-    if (!result.canceled && result.assets[0]) {
-      setter(result.assets[0].uri);
-    }
+  const pickVehiculePhoto = () => {
+    Alert.alert("Photo du véhicule", "Comment souhaitez-vous ajouter la photo ?", [
+      {
+        text: "Prendre une photo",
+        onPress: async () => {
+          const { status } = await ImagePicker.requestCameraPermissionsAsync();
+          if (status !== "granted") {
+            showToast("Permission caméra refusée", "error");
+            return;
+          }
+          const result = await ImagePicker.launchCameraAsync({
+            allowsEditing: true,
+            aspect: [16, 9],
+            quality: 0.8,
+          });
+          if (!result.canceled && result.assets[0]) setAddPhoto(result.assets[0].uri);
+        },
+      },
+      {
+        text: "Choisir depuis la galerie",
+        onPress: async () => {
+          const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ["images"],
+            allowsEditing: true,
+            aspect: [16, 9],
+            quality: 0.8,
+          });
+          if (!result.canceled && result.assets[0]) setAddPhoto(result.assets[0].uri);
+        },
+      },
+      { text: "Annuler", style: "cancel" },
+    ]);
+  };
+
+  const pickKycDoc = (setter: (uri: string) => void) => {
+    Alert.alert("Ajouter un document", "Comment souhaitez-vous ajouter ce document ?", [
+      {
+        text: "Prendre une photo",
+        onPress: async () => {
+          const { status } = await ImagePicker.requestCameraPermissionsAsync();
+          if (status !== "granted") {
+            showToast("Permission caméra refusée", "error");
+            return;
+          }
+          const result = await ImagePicker.launchCameraAsync({ allowsEditing: true, quality: 0.85 });
+          if (!result.canceled && result.assets[0]) setter(result.assets[0].uri);
+        },
+      },
+      {
+        text: "Choisir depuis la galerie",
+        onPress: async () => {
+          const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], allowsEditing: true, quality: 0.85 });
+          if (!result.canceled && result.assets[0]) setter(result.assets[0].uri);
+        },
+      },
+      { text: "Annuler", style: "cancel" },
+    ]);
   };
 
   const handleUploadDocs = async () => {
@@ -166,7 +221,7 @@ export default function ChauffeurSettingsScreen() {
       return;
     }
     try {
-      await addVehicule({
+      const vehicule = await addVehicule({
         marque: addForm.marque.trim(),
         modele: addForm.modele.trim(),
         annee,
@@ -176,9 +231,22 @@ export default function ChauffeurSettingsScreen() {
         nombre_places: places,
         climatise: addForm.climatise,
       });
+      if (addPhoto) {
+        try {
+          await uploadVehiculePhoto({ id: vehicule.id, uri: addPhoto });
+        } catch {
+          // photo non bloquante : le véhicule est créé, on avertit seulement
+          showToast("Véhicule ajouté (photo non envoyée)", "info");
+          setShowAddModal(false);
+          setAddForm(EMPTY_VEHICULE);
+          setAddPhoto(null);
+          return;
+        }
+      }
       showToast("Véhicule ajouté", "success");
       setShowAddModal(false);
       setAddForm(EMPTY_VEHICULE);
+      setAddPhoto(null);
     } catch (e) {
       showToast(getErrorMessage(e), "error");
     }
@@ -237,7 +305,7 @@ export default function ChauffeurSettingsScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
         <Pressable onPress={() => router.back()} style={styles.backBtn}>
           <Text style={styles.backBtnText}>←</Text>
         </Pressable>
@@ -274,44 +342,60 @@ export default function ChauffeurSettingsScreen() {
 
       {/* ── Section 2 : Documents KYC ────────────────────────────────────── */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Documents KYC</Text>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Documents KYC</Text>
+          {chauffeur?.kyc_valide && (
+            <View style={styles.kycValidBadge}>
+              <Text style={styles.kycValidBadgeText}>✓ Validé</Text>
+            </View>
+          )}
+        </View>
         <Text style={styles.sectionSub}>
-          Uploadez vos documents pour que l'équipe GoTaxi puisse valider votre compte.
+          {chauffeur?.kyc_valide
+            ? "Vos documents ont été validés par l'équipe GoTaxi."
+            : "Soumettez vos documents pour valider votre compte chauffeur."}
         </Text>
 
-        <DocPickerRow
+        <KycDocRow
           label="Carte d'identité (CIN)"
-          uri={cinUri}
-          onPick={() => pickImage(setCinUri)}
-          onClear={() => setCinUri(null)}
+          existingUrl={chauffeur?.cin_url ?? null}
+          newUri={cinUri}
+          onPick={() => pickKycDoc(setCinUri)}
+          onClearNew={() => setCinUri(null)}
         />
-        <DocPickerRow
+        <KycDocRow
           label="Permis de conduire"
-          uri={permisUri}
-          onPick={() => pickImage(setPermisUri)}
-          onClear={() => setPermisUri(null)}
+          existingUrl={chauffeur?.permis_url ?? null}
+          newUri={permisUri}
+          onPick={() => pickKycDoc(setPermisUri)}
+          onClearNew={() => setPermisUri(null)}
         />
-        <DocPickerRow
+        <KycDocRow
           label="Casier judiciaire"
-          uri={casierUri}
-          onPick={() => pickImage(setCasierUri)}
-          onClear={() => setCasierUri(null)}
+          existingUrl={chauffeur?.casier_judiciaire_url ?? null}
+          newUri={casierUri}
+          onPick={() => pickKycDoc(setCasierUri)}
+          onClearNew={() => setCasierUri(null)}
         />
 
-        <Pressable
-          style={[
-            styles.submitBtn,
-            (!cinUri && !permisUri && !casierUri) && styles.submitBtnDisabled,
-          ]}
-          onPress={handleUploadDocs}
-          disabled={uploadingDocs || (!cinUri && !permisUri && !casierUri)}
-        >
-          {uploadingDocs ? (
-            <ActivityIndicator color={colors.white} />
-          ) : (
-            <Text style={styles.submitBtnText}>Envoyer les documents</Text>
-          )}
-        </Pressable>
+        {(cinUri || permisUri || casierUri) && (
+          <Pressable
+            style={[styles.submitBtn, uploadingDocs && styles.submitBtnDisabled]}
+            onPress={handleUploadDocs}
+            disabled={uploadingDocs}
+          >
+            {uploadingDocs ? (
+              <ActivityIndicator color={colors.white} />
+            ) : (
+              <Text style={styles.submitBtnText}>
+                Envoyer{" "}
+                {[cinUri, permisUri, casierUri].filter(Boolean).length > 1
+                  ? `${[cinUri, permisUri, casierUri].filter(Boolean).length} documents`
+                  : "le document"}
+              </Text>
+            )}
+          </Pressable>
+        )}
       </View>
 
       {/* ── Section 3 : Véhicules ─────────────────────────────────────────── */}
@@ -328,7 +412,11 @@ export default function ChauffeurSettingsScreen() {
         ) : vehicules && vehicules.length > 0 ? (
           vehicules.map((v) => (
             <View key={v.id} style={styles.vehiculeCard}>
-              <Text style={styles.vehiculeIcon}>{TYPE_ICON[v.type_vehicule]}</Text>
+              {v.photo_url ? (
+                <Image source={{ uri: resolveMediaUrl(v.photo_url)! }} style={styles.vehiculePhoto} />
+              ) : (
+                <Text style={styles.vehiculeIcon}>{TYPE_ICON[v.type_vehicule]}</Text>
+              )}
               <View style={styles.vehiculeInfo}>
                 <Text style={styles.vehiculeName}>
                   {v.marque} {v.modele} ({v.annee})
@@ -370,6 +458,23 @@ export default function ChauffeurSettingsScreen() {
         )}
       </View>
 
+      {/* ── Section 4 : Compte de paiement ──────────────────────────────── */}
+      <Pressable
+        style={styles.payoutSection}
+        onPress={() => router.push("/(chauffeur)/payout-account")}
+      >
+        <View style={styles.payoutIconBox}>
+          <Text style={styles.payoutIcon}>💳</Text>
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.payoutTitle}>Compte de paiement</Text>
+          <Text style={styles.payoutSub}>
+            Configurez où recevoir vos revenus (MoMo, FedaPay…)
+          </Text>
+        </View>
+        <Text style={styles.payoutArrow}>›</Text>
+      </Pressable>
+
       {/* ── Modal : modifier profil ──────────────────────────────────────── */}
       <Modal visible={showProfileModal} animationType="slide" presentationStyle="pageSheet">
         <ScrollView style={styles.modal} contentContainerStyle={styles.modalContent}>
@@ -379,12 +484,11 @@ export default function ChauffeurSettingsScreen() {
           />
           <FormField label="N° CIN" value={cinInput} onChange={setCinInput} placeholder="Ex: BE1234567" />
           <FormField label="N° Permis" value={permisInput} onChange={setPermisInput} placeholder="Ex: P987654" />
-          <FormField
-            label="Expiration permis (AAAA-MM-JJ)"
+          <DatePickerField
+            label="Expiration permis"
             value={permisExpInput}
             onChange={setPermisExpInput}
-            placeholder="Ex: 2028-06-01"
-            keyboard="default"
+            minimumDate={new Date()}
           />
           <Pressable
             style={[styles.submitBtn, updatingProfile && styles.submitBtnDisabled]}
@@ -441,7 +545,7 @@ export default function ChauffeurSettingsScreen() {
       {/* ── Modal : ajouter véhicule ─────────────────────────────────────── */}
       <Modal visible={showAddModal} animationType="slide" presentationStyle="pageSheet">
         <ScrollView style={styles.modal} contentContainerStyle={styles.modalContent}>
-          <ModalHeader title="Ajouter un véhicule" onClose={() => { setShowAddModal(false); setAddForm(EMPTY_VEHICULE); }} />
+          <ModalHeader title="Ajouter un véhicule" onClose={() => { setShowAddModal(false); setAddForm(EMPTY_VEHICULE); setAddPhoto(null); }} />
 
           <FormField label="Marque *" value={addForm.marque} onChange={(v) => setAddForm((f) => ({ ...f, marque: v }))} placeholder="Ex: Toyota" />
           <FormField label="Modèle *" value={addForm.modele} onChange={(v) => setAddForm((f) => ({ ...f, modele: v }))} placeholder="Ex: Corolla" />
@@ -496,6 +600,29 @@ export default function ChauffeurSettingsScreen() {
             />
           </View>
 
+          <View style={styles.formGroup}>
+            <Text style={styles.formLabel}>Photo du véhicule</Text>
+            {addPhoto ? (
+              <View style={styles.photoPreviewRow}>
+                <Image source={{ uri: addPhoto }} style={styles.photoPreview} />
+                <View style={styles.photoPreviewActions}>
+                  <Pressable style={styles.photoChangeBtn} onPress={pickVehiculePhoto}>
+                    <Text style={styles.photoChangeBtnText}>Changer</Text>
+                  </Pressable>
+                  <Pressable style={styles.photoRemoveBtn} onPress={() => setAddPhoto(null)}>
+                    <Text style={styles.photoRemoveBtnText}>Supprimer</Text>
+                  </Pressable>
+                </View>
+              </View>
+            ) : (
+              <Pressable style={styles.photoPlaceholder} onPress={pickVehiculePhoto}>
+                <Text style={styles.photoPlaceholderIcon}>📷</Text>
+                <Text style={styles.photoPlaceholderText}>Ajouter une photo</Text>
+                <Text style={styles.photoPlaceholderSub}>Galerie ou appareil photo</Text>
+              </Pressable>
+            )}
+          </View>
+
           <Pressable
             style={[styles.submitBtn, adding && styles.submitBtnDisabled]}
             onPress={handleAddVehicule}
@@ -528,41 +655,59 @@ function Tag({ label }: { label: string }) {
   );
 }
 
-function DocPickerRow({
+function KycDocRow({
   label,
-  uri,
+  existingUrl,
+  newUri,
   onPick,
-  onClear,
+  onClearNew,
 }: {
   label: string;
-  uri: string | null;
+  existingUrl: string | null;
+  newUri: string | null;
   onPick: () => void;
-  onClear: () => void;
+  onClearNew: () => void;
 }) {
+  const resolvedExisting = resolveMediaUrl(existingUrl);
+  const displayUri = newUri ?? resolvedExisting;
+  const isNew = !!newUri;
+  const isExisting = !newUri && !!resolvedExisting;
+
   return (
     <View style={styles.docRow}>
       <View style={styles.docInfo}>
         <Text style={styles.docLabel}>{label}</Text>
-        {uri ? (
-          <Text style={styles.docSelected} numberOfLines={1}>
-            ✓ Image sélectionnée
-          </Text>
+        {isNew ? (
+          <Text style={styles.docNew}>Nouveau fichier — non encore envoyé</Text>
+        ) : isExisting ? (
+          <Text style={styles.docSubmitted}>✓ Document soumis</Text>
         ) : (
-          <Text style={styles.docNone}>Aucun fichier</Text>
+          <Text style={styles.docNone}>Non soumis</Text>
         )}
       </View>
-      {uri ? (
-        <View style={styles.docButtons}>
-          <Image source={{ uri }} style={styles.docThumb} />
-          <Pressable style={styles.docClearBtn} onPress={onClear}>
+
+      <View style={styles.docButtons}>
+        {displayUri && (
+          <Image
+            source={{ uri: displayUri }}
+            style={[styles.docThumb, isNew && styles.docThumbNew]}
+          />
+        )}
+        {isNew ? (
+          <Pressable style={styles.docClearBtn} onPress={onClearNew}>
             <Text style={styles.docClearText}>✕</Text>
           </Pressable>
-        </View>
-      ) : (
-        <Pressable style={styles.docPickBtn} onPress={onPick}>
-          <Text style={styles.docPickText}>Choisir</Text>
-        </Pressable>
-      )}
+        ) : (
+          <Pressable
+            style={[styles.docPickBtn, isExisting && styles.docChangeBtn]}
+            onPress={onPick}
+          >
+            <Text style={[styles.docPickText, isExisting && styles.docChangeBtnText]}>
+              {isExisting ? "Changer" : "Ajouter"}
+            </Text>
+          </Pressable>
+        )}
+      </View>
     </View>
   );
 }
@@ -731,10 +876,15 @@ const styles = StyleSheet.create({
     fontFamily: typography.fontFamily.semiBold,
     color: colors.textPrimary,
   },
-  docSelected: {
+  docSubmitted: {
     fontSize: typography.fontSize.xs,
     fontFamily: typography.fontFamily.regular,
     color: colors.success,
+  },
+  docNew: {
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamily.regular,
+    color: colors.primary,
   },
   docNone: {
     fontSize: typography.fontSize.xs,
@@ -742,7 +892,8 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
   },
   docButtons: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  docThumb: { width: 40, height: 40, borderRadius: radii.sm, backgroundColor: colors.border },
+  docThumb: { width: 44, height: 44, borderRadius: radii.sm, backgroundColor: colors.border },
+  docThumbNew: { borderWidth: 2, borderColor: colors.primary },
   docClearBtn: {
     width: 28,
     height: 28,
@@ -763,6 +914,21 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.sm,
     fontFamily: typography.fontFamily.semiBold,
     color: colors.textSecondary,
+  },
+  docChangeBtn: { borderColor: colors.primary },
+  docChangeBtnText: { color: colors.primary },
+  kycValidBadge: {
+    backgroundColor: colors.successBg,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: radii.full,
+    borderWidth: 1,
+    borderColor: colors.success,
+  },
+  kycValidBadgeText: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.semiBold,
+    color: colors.success,
   },
   // Submit button
   submitBtn: {
@@ -790,6 +956,12 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   vehiculeIcon: { fontSize: 32, marginTop: 4 },
+  vehiculePhoto: {
+    width: 56,
+    height: 56,
+    borderRadius: radii.md,
+    backgroundColor: colors.border,
+  },
   vehiculeInfo: { flex: 1, gap: spacing.xs },
   vehiculeName: {
     fontSize: typography.fontSize.base,
@@ -903,10 +1075,107 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   typeLabelActive: { color: colors.primary, fontFamily: typography.fontFamily.semiBold },
+  // Vehicle photo picker
+  photoPlaceholder: {
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    borderStyle: "dashed",
+    borderRadius: radii.md,
+    paddingVertical: spacing["2xl"],
+    alignItems: "center",
+    gap: spacing.xs,
+    backgroundColor: colors.surface,
+  },
+  photoPlaceholderIcon: { fontSize: 32 },
+  photoPlaceholderText: {
+    fontSize: typography.fontSize.base,
+    fontFamily: typography.fontFamily.semiBold,
+    color: colors.textSecondary,
+  },
+  photoPlaceholderSub: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.regular,
+    color: colors.textMuted,
+  },
+  photoPreviewRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+  },
+  photoPreview: {
+    width: 100,
+    height: 70,
+    borderRadius: radii.md,
+    backgroundColor: colors.border,
+  },
+  photoPreviewActions: { flex: 1, gap: spacing.sm },
+  photoChangeBtn: {
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.md,
+    borderRadius: radii.md,
+    borderWidth: 1.5,
+    borderColor: colors.primary,
+    alignItems: "center",
+  },
+  photoChangeBtnText: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.semiBold,
+    color: colors.primary,
+  },
+  photoRemoveBtn: {
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.md,
+    borderRadius: radii.md,
+    borderWidth: 1.5,
+    borderColor: colors.error,
+    alignItems: "center",
+  },
+  photoRemoveBtnText: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.semiBold,
+    color: colors.error,
+  },
   switchRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     paddingVertical: spacing.sm,
+  },
+  // Payout section
+  payoutSection: {
+    backgroundColor: colors.white,
+    margin: spacing["2xl"],
+    marginBottom: 0,
+    borderRadius: radii.xl,
+    padding: spacing.xl,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    ...shadows.sm,
+  },
+  payoutIconBox: {
+    width: 48,
+    height: 48,
+    borderRadius: radii.lg,
+    backgroundColor: colors.successBg,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  payoutIcon: { fontSize: 24 },
+  payoutTitle: {
+    fontSize: typography.fontSize.base,
+    fontFamily: typography.fontFamily.bold,
+    color: colors.textPrimary,
+  },
+  payoutSub: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.regular,
+    color: colors.textSecondary,
+    marginTop: 2,
+  },
+  payoutArrow: {
+    fontSize: 24,
+    color: colors.textMuted,
+    fontFamily: typography.fontFamily.regular,
   },
 });

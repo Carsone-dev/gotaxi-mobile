@@ -8,6 +8,7 @@ import {
   RefreshControl,
   Pressable,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useChauffeurRevenus, useChauffeurStats } from "@/src/hooks/useChauffeur";
@@ -16,6 +17,7 @@ import { formatFCFA } from "@/src/utils/formatters";
 import { colors, typography, spacing, radii, shadows } from "@/src/theme";
 
 export default function RevenusScreen() {
+  const insets = useSafeAreaInsets();
   const {
     data: revenus,
     isLoading: revLoading,
@@ -35,7 +37,7 @@ export default function RevenusScreen() {
         <RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={colors.primary} />
       }
     >
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
         <Pressable onPress={() => router.back()} style={styles.backBtn}>
           <Text style={styles.backBtnText}>←</Text>
         </Pressable>

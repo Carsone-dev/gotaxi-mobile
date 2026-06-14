@@ -10,6 +10,7 @@ import {
   Alert,
   Image,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router, useLocalSearchParams } from "expo-router";
 import {
   useVoyageDetail,
@@ -613,6 +614,7 @@ const RESA_STATUS_LABEL: Record<ReservationStatus, string> = {
 };
 
 export default function VoyageDetailChauffeurScreen() {
+  const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { showToast } = useToast();
 

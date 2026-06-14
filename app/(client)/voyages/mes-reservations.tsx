@@ -10,6 +10,7 @@ import {
   Alert,
   Platform,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { router } from "expo-router";
 import { format } from "date-fns";
@@ -207,6 +208,7 @@ function ReservationCard({ reservation, index }: { reservation: Reservation; ind
 
 // ── Écran ─────────────────────────────────────────────────────────────────────
 export default function MesReservationsScreen() {
+  const insets = useSafeAreaInsets();
   const { data, isLoading, refetch, isRefetching } = useMyReservations();
 
   const active = data?.filter(

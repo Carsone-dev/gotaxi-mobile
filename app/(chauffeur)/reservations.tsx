@@ -9,6 +9,7 @@ import {
   RefreshControl,
   Image,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   useIncomingReservations,
   useAcceptReservation,
@@ -332,6 +333,7 @@ const cardStyles = StyleSheet.create({
 // ─── Écran principal ──────────────────────────────────────────────────────────
 
 export default function ReservationsScreen() {
+  const insets = useSafeAreaInsets();
   const [tab, setTab] = useState<Tab>("pending");
   const {
     data: incoming,
@@ -351,7 +353,7 @@ export default function ReservationsScreen() {
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
         <View style={styles.headerLeft}>
           <Text style={styles.title}>Réservations</Text>
           <Text style={styles.subtitle}>Gérez les demandes de vos passagers</Text>

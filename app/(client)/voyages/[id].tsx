@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Platform,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { router, useLocalSearchParams } from "expo-router";
 import { format } from "date-fns";
@@ -47,6 +48,7 @@ function InfoRow({
 
 // ── Écran ─────────────────────────────────────────────────────────────────────
 export default function VoyageDetailScreen() {
+  const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const user = useAuthStore((s) => s.user);
   const { data: voyage, isLoading, isError } = useVoyageDetail(id ?? "");

@@ -9,6 +9,14 @@ export const usePopularVoyages = () =>
     staleTime: 5 * 60_000,
   });
 
+export const useActiveVoyages = () =>
+  useQuery({
+    queryKey: ["voyages", "active"],
+    queryFn: voyagesApi.active,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
+
 export const useSearchVoyages = (params: VoyageSearchParams, enabled = true) =>
   useQuery({
     queryKey: ["voyages", "search", params],

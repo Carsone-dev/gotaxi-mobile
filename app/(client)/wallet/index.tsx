@@ -1,4 +1,4 @@
-import React, { useCallback } from "react";
+import React, { useCallback, useState } from "react";
 import {
   View,
   Text,
@@ -8,19 +8,23 @@ import {
   ActivityIndicator,
   RefreshControl,
   Platform,
+  TextInput,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { useWallet, useWalletActivity } from "@/src/hooks/useWallet";
+import { useWallet, useWalletActivity, useWalletSearch } from "@/src/hooks/useWallet";
 import { formatFCFA, formatRelative } from "@/src/utils/formatters";
 import { colors, typography, spacing, radii, shadows } from "@/src/theme";
-import type { Transaction, TransactionType, TransactionStatut, OperateurMM } from "@/src/api/types";
+import type { Transaction, TransactionType, TransactionStatut, OperateurMM, WalletPublic } from "@/src/api/types";
 
 // ── Opérateurs ────────────────────────────────────────────────────────────────
 const OPERATEUR_CFG: Record<OperateurMM, { label: string; color: string }> = {
   MTN_MOMO:     { label: "MTN MoMo",     color: colors.mtnYellow },
   ORANGE_MONEY: { label: "Orange Money", color: colors.orangeOrange },
   MOOV_MONEY:   { label: "Moov Money",   color: colors.moovBlue },
+  CELTIS:       { label: "Celtis",       color: colors.celtisBlue },
+  FEDAPAY:      { label: "FedaPay",      color: colors.fedapayPurple },
 };
 
 // ── Types de transactions ─────────────────────────────────────────────────────
@@ -80,8 +84,111 @@ function TxCard({ tx }: { tx: Transaction }) {
   );
 }
 
+// ── Recherche wallet ──────────────────────────────────────────────────────────
+function WalletSearchSection() {
+  const [telephone, setTelephone] = useState("");
+  const [result, setResult] = useState<WalletPublic | null>(null);
+  const [notFound, setNotFound] = useState(false);
+  const { mutateAsync: search, isPending } = useWalletSearch();
+
+  const query = telephone.trim();
+  const canSearch = query.length >= 8;
+
+  const handleSearch = async () => {
+    if (!canSearch) return;
+    setResult(null);
+    setNotFound(false);
+    try {
+      const found = await search(query);
+      setResult(found);
+    } catch (e: any) {
+      setNotFound(true);
+    }
+  };
+
+  const handleTransfer = () => {
+    if (!result) return;
+    router.push({ pathname: "/(client)/wallet/transfert", params: { telephone: result.telephone } } as any);
+  };
+
+  return (
+    <View style={styles.searchSection}>
+      <Text style={styles.sectionTitle}>Rechercher un wallet</Text>
+      <Text style={styles.searchHint}>Vérifiez qu'un utilisateur a un compte GoTaxi avant de lui transférer de l'argent.</Text>
+
+      <View style={styles.searchRow}>
+        <View style={[styles.searchInputWrap, { flex: 1 }]}>
+          <Ionicons name="search" size={18} color={colors.textMuted} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="+22961000000"
+            placeholderTextColor={colors.textMuted}
+            keyboardType="phone-pad"
+            value={telephone}
+            onChangeText={(v) => { setTelephone(v); setResult(null); setNotFound(false); }}
+            returnKeyType="search"
+            onSubmitEditing={handleSearch}
+          />
+          {telephone.length > 0 && (
+            <Pressable onPress={() => { setTelephone(""); setResult(null); setNotFound(false); }} hitSlop={8}>
+              <Ionicons name="close-circle" size={18} color={colors.textMuted} />
+            </Pressable>
+          )}
+        </View>
+        <Pressable
+          style={[styles.searchBtn, (!canSearch || isPending) && styles.searchBtnDisabled]}
+          onPress={handleSearch}
+          disabled={!canSearch || isPending}
+        >
+          {isPending
+            ? <ActivityIndicator size="small" color={colors.white} />
+            : <Ionicons name="search" size={18} color={colors.white} />}
+        </Pressable>
+      </View>
+
+      {notFound && (
+        <View style={styles.searchNotFound}>
+          <Ionicons name="alert-circle-outline" size={16} color={colors.error} />
+          <Text style={styles.searchNotFoundTxt}>Aucun wallet trouvé pour ce numéro.</Text>
+        </View>
+      )}
+
+      {result && (
+        <View style={styles.searchResult}>
+          <View style={styles.searchResultAvatar}>
+            <Text style={styles.searchResultInitials}>
+              {result.prenom[0]}{result.nom[0]}
+            </Text>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.searchResultName}>{result.prenom} {result.nom}</Text>
+            <View style={styles.searchResultMeta}>
+              <View style={[styles.searchResultPill, { backgroundColor: result.actif ? colors.successBg : colors.errorBg }]}>
+                <View style={[styles.searchResultDot, { backgroundColor: result.actif ? colors.success : colors.error }]} />
+                <Text style={[styles.searchResultPillTxt, { color: result.actif ? colors.success : colors.error }]}>
+                  {result.actif ? "Wallet actif" : "Wallet inactif"}
+                </Text>
+              </View>
+            </View>
+          </View>
+          {result.actif && (
+            <Pressable
+              style={({ pressed }) => [styles.searchTransferBtn, pressed && { opacity: 0.8 }]}
+              onPress={handleTransfer}
+            >
+              <Ionicons name="swap-horizontal" size={16} color={colors.white} />
+              <Text style={styles.searchTransferBtnTxt}>Transférer</Text>
+            </Pressable>
+          )}
+        </View>
+      )}
+    </View>
+  );
+}
+
 // ── Écran principal ───────────────────────────────────────────────────────────
 export default function WalletScreen() {
+  const insets = useSafeAreaInsets();
   const { data: wallet, isLoading, refetch, isRefetching } = useWallet();
   const { data: activity, isLoading: actLoading, refetch: refetchAct } = useWalletActivity(1);
 
@@ -100,7 +207,7 @@ export default function WalletScreen() {
   return (
     <View style={styles.root}>
       {/* ── Header fixe ── */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
         <View>
           <Text style={styles.headerTitle}>Mon Wallet</Text>
           <Text style={styles.headerSub}>Gérez vos paiements GoTaxi</Text>
@@ -180,6 +287,9 @@ export default function WalletScreen() {
             <Text style={styles.actionLabel}>Transférer</Text>
           </Pressable>
         </View>
+
+        {/* ── Recherche wallet ── */}
+        <WalletSearchSection />
 
         {/* ── Transactions récentes ── */}
         <View style={styles.sectionHeader}>
@@ -400,6 +510,116 @@ const styles = StyleSheet.create({
   txStatutText: {
     fontSize: typography.fontSize.xs,
     fontFamily: typography.fontFamily.semiBold,
+  },
+
+  // Recherche wallet
+  searchSection: {
+    marginHorizontal: spacing["2xl"],
+    marginBottom: spacing["2xl"],
+    backgroundColor: colors.white,
+    borderRadius: radii.xl,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.xl,
+    gap: spacing.md,
+    ...shadows.sm,
+  },
+  searchHint: {
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamily.regular,
+    color: colors.textMuted,
+    lineHeight: 16,
+  },
+  searchRow: { flexDirection: "row", gap: spacing.sm, alignItems: "center" },
+  searchInputWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    borderRadius: radii.lg,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: typography.fontSize.base,
+    fontFamily: typography.fontFamily.medium,
+    color: colors.textPrimary,
+  },
+  searchBtn: {
+    width: 44, height: 44, borderRadius: radii.lg,
+    backgroundColor: colors.primary,
+    alignItems: "center", justifyContent: "center",
+  },
+  searchBtnDisabled: { opacity: 0.45 },
+  searchNotFound: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    backgroundColor: colors.errorBg,
+    borderRadius: radii.lg,
+    padding: spacing.md,
+  },
+  searchNotFoundTxt: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.regular,
+    color: colors.error,
+  },
+  searchResult: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    backgroundColor: colors.successBg,
+    borderRadius: radii.lg,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: `${colors.success}25`,
+  },
+  searchResultAvatar: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: colors.primary,
+    alignItems: "center", justifyContent: "center",
+  },
+  searchResultInitials: {
+    fontSize: typography.fontSize.base,
+    fontFamily: typography.fontFamily.bold,
+    color: colors.white,
+    textTransform: "uppercase",
+  },
+  searchResultName: {
+    fontSize: typography.fontSize.base,
+    fontFamily: typography.fontFamily.semiBold,
+    color: colors.textPrimary,
+  },
+  searchResultMeta: { flexDirection: "row", alignItems: "center", marginTop: 3 },
+  searchResultPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    borderRadius: radii.full,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+  },
+  searchResultDot: { width: 6, height: 6, borderRadius: 3 },
+  searchResultPillTxt: {
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamily.semiBold,
+  },
+  searchTransferBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    backgroundColor: colors.primary,
+    borderRadius: radii.lg,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  searchTransferBtnTxt: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.bold,
+    color: colors.white,
   },
 
   // Empty

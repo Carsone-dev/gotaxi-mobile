@@ -1,4 +1,4 @@
-import React, { useRef, useCallback } from "react";
+import React, { useRef, useCallback, useState, useMemo } from "react";
 import {
   View,
   Text,
@@ -9,35 +9,46 @@ import {
   Dimensions,
   Platform,
   RefreshControl,
+  TextInput,
 } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
-import MapView, { Marker, PROVIDER_DEFAULT } from "react-native-maps";
+import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import { useAuthStore } from "@/src/stores/authStore";
-import { usePopularVoyages } from "@/src/hooks/useVoyages";
+import { usePopularVoyages, useActiveVoyages } from "@/src/hooks/useVoyages";
+import { useVilles } from "@/src/hooks/useGares";
 import { formatFCFA, formatTime } from "@/src/utils/formatters";
 import { colors, typography, spacing, radii, shadows } from "@/src/theme";
+import {
+  LeafletMapView,
+  BENIN_REGION,
+  COUNTRY_REGIONS,
+} from "@/src/components/map/LeafletMapView";
+import type { LeafletMapHandle, LeafletMarker } from "@/src/components/map/LeafletMapView";
 import type { Voyage } from "@/src/api/types";
 
 const { height: SCREEN_H } = Dimensions.get("window");
-const MAP_HEIGHT = SCREEN_H * 0.44;
+const MAP_HEIGHT = SCREEN_H * 0.50;
 
-const BENIN_REGION = {
-  latitude: 9.3077,
-  longitude: 2.3158,
-  latitudeDelta: 6,
-  longitudeDelta: 4,
+// Couleur par statut voyage
+const MARKER_COLOR: Record<string, string> = {
+  PUBLIE_FULL: colors.primary,
+  PUBLIE_PARTIAL: colors.orangeOrange,
+  EN_COURS: "#0066FF",
+  COMPLET: colors.error,
 };
 
 function markerColor(v: Voyage): string {
-  if (v.statut === "COMPLET") return colors.error;
-  if (v.nombre_places_restantes < v.nombre_places_total) return colors.orangeOrange;
-  return colors.primary;
+  if (v.statut === "EN_COURS") return MARKER_COLOR.EN_COURS;
+  if (v.statut === "COMPLET") return MARKER_COLOR.COMPLET;
+  if (v.nombre_places_restantes < v.nombre_places_total) return MARKER_COLOR.PUBLIE_PARTIAL;
+  return MARKER_COLOR.PUBLIE_FULL;
 }
 
 function statusLabel(v: Voyage): string {
+  if (v.statut === "EN_COURS") return "En cours";
   if (v.statut === "COMPLET") return "Complet";
   if (v.nombre_places_restantes < v.nombre_places_total) return "En chargement";
   return "Disponible";
@@ -50,10 +61,18 @@ function greeting(): string {
   return "Bonsoir";
 }
 
-// ── Carte voyage ──────────────────────────────────────────────────────────────
-function VoyageCard({ voyage, index, onMarkerFocus }: { voyage: Voyage; index: number; onMarkerFocus: (v: Voyage) => void }) {
+// ── Carte voyage ───────────────────────────────────────────────────────────────
+function VoyageCard({
+  voyage,
+  index,
+  onMarkerFocus,
+}: {
+  voyage: Voyage;
+  index: number;
+  onMarkerFocus: (v: Voyage) => void;
+}) {
   const accent = markerColor(voyage);
-  const label  = statusLabel(voyage);
+  const label = statusLabel(voyage);
   const isFull = voyage.statut === "COMPLET";
 
   return (
@@ -65,11 +84,9 @@ function VoyageCard({ voyage, index, onMarkerFocus }: { voyage: Voyage; index: n
           router.push(`/(client)/voyages/${voyage.id}` as any);
         }}
       >
-        {/* Barre accent top */}
         <View style={[styles.cardAccent, { backgroundColor: accent }]} />
-
         <View style={styles.cardInner}>
-          {/* Ligne 1 : route + statut */}
+          {/* Route + statut */}
           <View style={styles.cardTopRow}>
             <Text style={styles.cardRoute} numberOfLines={1}>
               {voyage.ville_depart}
@@ -82,7 +99,7 @@ function VoyageCard({ voyage, index, onMarkerFocus }: { voyage: Voyage; index: n
             </View>
           </View>
 
-          {/* Route timeline */}
+          {/* Timeline */}
           <View style={styles.timeline}>
             <View style={styles.timelineLine} />
             <View style={[styles.timelineDot, { backgroundColor: colors.primary }]} />
@@ -95,8 +112,10 @@ function VoyageCard({ voyage, index, onMarkerFocus }: { voyage: Voyage; index: n
           {/* Point de départ */}
           {voyage.point_depart ? (
             <View style={styles.pointRow}>
-              <Text style={styles.pointIcon}>📍</Text>
-              <Text style={styles.pointText} numberOfLines={1}>{voyage.point_depart}</Text>
+              <Ionicons name="location-outline" size={13} color={colors.textMuted} />
+              <Text style={styles.pointText} numberOfLines={1}>
+                {voyage.point_depart}
+              </Text>
             </View>
           ) : null}
 
@@ -113,12 +132,11 @@ function VoyageCard({ voyage, index, onMarkerFocus }: { voyage: Voyage; index: n
             <View style={styles.cardBottomRight}>
               <Text style={styles.cardPrice}>{formatFCFA(voyage.prix_par_place)}</Text>
               <Text style={styles.cardPriceSub}>par pers.</Text>
-              <View style={[
-                styles.placesBadge,
-                isFull && styles.placesBadgeFull,
-              ]}>
+              <View style={[styles.placesBadge, isFull && styles.placesBadgeFull]}>
                 <Text style={[styles.placesText, isFull && styles.placesTextFull]}>
-                  {isFull ? "Complet" : `${voyage.nombre_places_restantes} place${voyage.nombre_places_restantes > 1 ? "s" : ""}`}
+                  {isFull
+                    ? "Complet"
+                    : `${voyage.nombre_places_restantes} place${voyage.nombre_places_restantes > 1 ? "s" : ""}`}
                 </Text>
               </View>
             </View>
@@ -129,56 +147,131 @@ function VoyageCard({ voyage, index, onMarkerFocus }: { voyage: Voyage; index: n
   );
 }
 
-// ── Écran principal ───────────────────────────────────────────────────────────
+// ── Écran principal ────────────────────────────────────────────────────────────
 export default function HomeScreen() {
   const user = useAuthStore((s) => s.user);
   const { data: voyages, isLoading, refetch, isRefetching } = usePopularVoyages();
-  const mapRef = useRef<MapView>(null);
+  const { data: activeVoyages } = useActiveVoyages();
+  const { data: villes } = useVilles();
+  const mapRef = useRef<LeafletMapHandle>(null);
 
-  const mapMarkers =
+  const [searchDepart, setSearchDepart] = useState("");
+  const [searchArrivee, setSearchArrivee] = useState("");
+  const [departFocused, setDepartFocused] = useState(false);
+  const [arriveeFocused, setArriveeFocused] = useState(false);
+
+  // Marqueurs : PUBLIE + COMPLET (depuis popular) + EN_COURS (depuis active)
+  const publishedMarkers =
     voyages?.filter(
       (v) =>
         (v.statut === "PUBLIE" || v.statut === "COMPLET") &&
-        v.lat_depart &&
-        v.lng_depart,
+        v.lat_depart != null &&
+        v.lng_depart != null,
     ) ?? [];
+
+  const enCoursVoyages =
+    (activeVoyages ?? []).filter(
+      (v) =>
+        v.statut === "EN_COURS" &&
+        v.lat_depart != null &&
+        v.lng_depart != null,
+    );
 
   const listVoyages =
     voyages?.filter((v) => v.statut === "PUBLIE" || v.statut === "COMPLET") ?? [];
 
+  const markers: LeafletMarker[] = useMemo(() => {
+    const list: LeafletMarker[] = [];
+    publishedMarkers.forEach((v) => {
+      list.push({
+        id: v.id,
+        lat: v.lat_depart,
+        lng: v.lng_depart,
+        color: markerColor(v),
+        type:
+          v.statut === "COMPLET"
+            ? "full"
+            : v.nombre_places_restantes < v.nombre_places_total
+            ? "partial"
+            : "available",
+        title: `${v.ville_depart} → ${v.ville_arrivee}`,
+        desc: `${formatFCFA(v.prix_par_place)} · ${v.nombre_places_restantes} pl.`,
+      });
+    });
+    enCoursVoyages.forEach((v) => {
+      list.push({
+        id: v.id,
+        lat: v.lat_depart,
+        lng: v.lng_depart,
+        color: MARKER_COLOR.EN_COURS,
+        type: "active",
+        title: `En cours · ${v.ville_depart} → ${v.ville_arrivee}`,
+        desc: `Départ: ${formatTime(v.date_depart)}`,
+        toLat: v.lat_arrivee,
+        toLng: v.lng_arrivee,
+      });
+    });
+    return list;
+  }, [publishedMarkers, enCoursVoyages]);
+
+  const filteredVoyages = listVoyages.filter((v) => {
+    const depOk =
+      !searchDepart ||
+      v.ville_depart.toLowerCase().includes(searchDepart.toLowerCase());
+    const arrOk =
+      !searchArrivee ||
+      v.ville_arrivee.toLowerCase().includes(searchArrivee.toLowerCase());
+    return depOk && arrOk;
+  });
+
+  const hasSearch = searchDepart.length > 0 || searchArrivee.length > 0;
+
+  const departSuggestions =
+    villes && searchDepart.length > 0
+      ? villes
+          .filter(
+            (v) =>
+              v.actif &&
+              v.nom.toLowerCase().includes(searchDepart.toLowerCase()),
+          )
+          .slice(0, 5)
+      : [];
+
+  const arriveeSuggestions =
+    villes && searchArrivee.length > 0
+      ? villes
+          .filter(
+            (v) =>
+              v.actif &&
+              v.nom.toLowerCase().includes(searchArrivee.toLowerCase()),
+          )
+          .slice(0, 5)
+      : [];
+
   const focusOnMarker = useCallback((v: Voyage) => {
-    mapRef.current?.animateToRegion(
-      { latitude: v.lat_depart, longitude: v.lng_depart, latitudeDelta: 0.6, longitudeDelta: 0.6 },
-      400,
-    );
+    mapRef.current?.focusOn(v.lat_depart, v.lng_depart);
   }, []);
 
   const initials = user ? `${user.prenom[0]}${user.nom[0]}`.toUpperCase() : "?";
 
   return (
     <View style={styles.container}>
-      {/* ── CARTE ──────────────────────────────────────────────────── */}
+      {/* ── CARTE ──────────────────────────────────────────────────────── */}
       <View style={styles.mapContainer}>
-        <MapView
+        <LeafletMapView
           ref={mapRef}
           style={StyleSheet.absoluteFill}
-          provider={PROVIDER_DEFAULT}
-          initialRegion={BENIN_REGION}
-          showsUserLocation
-          showsMyLocationButton={false}
-          showsCompass={false}
-        >
-          {mapMarkers.map((v) => (
-            <Marker
-              key={v.id}
-              coordinate={{ latitude: v.lat_depart, longitude: v.lng_depart }}
-              pinColor={markerColor(v)}
-              title={`${v.ville_depart} → ${v.ville_arrivee}`}
-              description={`${formatFCFA(v.prix_par_place)} · ${v.nombre_places_restantes} pl.`}
-              onPress={() => focusOnMarker(v)}
-            />
-          ))}
-        </MapView>
+          markers={markers}
+          region={BENIN_REGION}
+          onMarkerPress={(id) => {
+            const all = [...(voyages ?? []), ...(activeVoyages ?? [])];
+            const v = all.find((x) => x.id === id);
+            if (v) {
+              focusOnMarker(v);
+              router.push(`/(client)/voyages/${v.id}` as any);
+            }
+          }}
+        />
 
         {/* En-tête flottant */}
         <View style={styles.mapHeader} pointerEvents="box-none">
@@ -201,19 +294,27 @@ export default function HomeScreen() {
         {/* Légende */}
         <View style={styles.legend} pointerEvents="none">
           {[
-            { color: colors.primary,     label: "Disponible" },
-            { color: colors.orangeOrange, label: "En chargement" },
-            { color: colors.error,       label: "Complet" },
-          ].map(({ color, label }) => (
+            { color: MARKER_COLOR.PUBLIE_FULL, label: "Disponible" },
+            { color: MARKER_COLOR.PUBLIE_PARTIAL, label: "En chargement" },
+            { color: MARKER_COLOR.EN_COURS, label: "En cours", dashed: true },
+            { color: MARKER_COLOR.COMPLET, label: "Complet" },
+          ].map(({ color, label, dashed }) => (
             <View key={label} style={styles.legendItem}>
-              <View style={[styles.legendDot, { backgroundColor: color }]} />
+              {dashed ? (
+                <View style={styles.legendLine}>
+                  <View style={[styles.legendDash, { backgroundColor: color }]} />
+                  <View style={[styles.legendDash, { backgroundColor: color }]} />
+                </View>
+              ) : (
+                <View style={[styles.legendDot, { backgroundColor: color }]} />
+              )}
               <Text style={styles.legendText}>{label}</Text>
             </View>
           ))}
         </View>
       </View>
 
-      {/* ── PANNEAU BAS ────────────────────────────────────────────── */}
+      {/* ── PANNEAU BAS ────────────────────────────────────────────────── */}
       <ScrollView
         style={styles.panel}
         contentContainerStyle={styles.panelContent}
@@ -228,86 +329,189 @@ export default function HomeScreen() {
           />
         }
       >
-        {/* ── Actions rapides ───────── */}
+        {/* ── Actions rapides (compactes) ─────── */}
         <View style={styles.actions}>
-          {/* Voyager */}
           <Pressable
-            style={({ pressed }) => [styles.actionCard, styles.actionGreen, pressed && styles.actionPressed]}
+            style={({ pressed }) => [
+              styles.actionBtn,
+              { backgroundColor: colors.primary },
+              pressed && styles.actionPressed,
+            ]}
             onPress={() => router.push("/(client)/voyages" as any)}
           >
-            <Text style={styles.actionBgEmoji}>🚗</Text>
-            <View style={styles.actionIconCircle}>
-              <Text style={styles.actionIconEmoji}>🚗</Text>
-            </View>
-            <View style={styles.actionBody}>
-              <Text style={styles.actionTitle}>Voyager</Text>
-              <Text style={styles.actionDesc}>Trouver un trajet</Text>
-            </View>
-            <View style={styles.actionArrow}>
-              <Text style={styles.actionArrowTxt}>→</Text>
-            </View>
+            <Ionicons name="car-sport-outline" size={17} color={colors.white} />
+            <Text style={styles.actionBtnText}>Voyager</Text>
           </Pressable>
 
-          {/* Colis */}
           <Pressable
-            style={({ pressed }) => [styles.actionCard, styles.actionDark, pressed && styles.actionPressed]}
+            style={({ pressed }) => [
+              styles.actionBtn,
+              { backgroundColor: colors.black },
+              pressed && styles.actionPressed,
+            ]}
             onPress={() => router.push("/(client)/colis" as any)}
           >
-            <Text style={styles.actionBgEmoji}>📦</Text>
-            <View style={styles.actionIconCircle}>
-              <Text style={styles.actionIconEmoji}>📦</Text>
-            </View>
-            <View style={styles.actionBody}>
-              <Text style={styles.actionTitle}>Colis</Text>
-              <Text style={styles.actionDesc}>Envoyer un colis</Text>
-            </View>
-            <View style={styles.actionArrow}>
-              <Text style={styles.actionArrowTxt}>→</Text>
-            </View>
+            <Ionicons name="cube-outline" size={17} color={colors.white} />
+            <Text style={styles.actionBtnText}>Colis</Text>
           </Pressable>
         </View>
 
-        {/* ── En-tête section ──────── */}
+        {/* ── Recherche de trajet ──────────────── */}
+        <View style={styles.searchCard}>
+          {/* Champ départ */}
+          <View style={styles.searchField}>
+            <Ionicons name="navigate-circle-outline" size={18} color={colors.primary} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Ville de départ"
+              placeholderTextColor={colors.textMuted}
+              value={searchDepart}
+              onChangeText={setSearchDepart}
+              onFocus={() => setDepartFocused(true)}
+              onBlur={() => setTimeout(() => setDepartFocused(false), 200)}
+              returnKeyType="next"
+            />
+            {searchDepart.length > 0 && (
+              <Pressable onPress={() => setSearchDepart("")} hitSlop={8}>
+                <Ionicons name="close-circle" size={16} color={colors.textMuted} />
+              </Pressable>
+            )}
+          </View>
+
+          {/* Suggestions départ */}
+          {departFocused && departSuggestions.length > 0 && (
+            <View style={styles.suggestions}>
+              {departSuggestions.map((v) => (
+                <Pressable
+                  key={v.id}
+                  style={styles.suggestionItem}
+                  onPress={() => {
+                    setSearchDepart(v.nom);
+                    setDepartFocused(false);
+                  }}
+                >
+                  <Ionicons name="location-sharp" size={13} color={colors.primary} />
+                  <Text style={styles.suggestionText}>{v.nom}</Text>
+                </Pressable>
+              ))}
+            </View>
+          )}
+
+          <View style={styles.searchDivider} />
+
+          {/* Champ arrivée */}
+          <View style={styles.searchField}>
+            <Ionicons name="location-outline" size={18} color={colors.textMuted} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Ville d'arrivée"
+              placeholderTextColor={colors.textMuted}
+              value={searchArrivee}
+              onChangeText={setSearchArrivee}
+              onFocus={() => setArriveeFocused(true)}
+              onBlur={() => setTimeout(() => setArriveeFocused(false), 200)}
+              returnKeyType="search"
+            />
+            {searchArrivee.length > 0 && (
+              <Pressable onPress={() => setSearchArrivee("")} hitSlop={8}>
+                <Ionicons name="close-circle" size={16} color={colors.textMuted} />
+              </Pressable>
+            )}
+          </View>
+
+          {/* Suggestions arrivée */}
+          {arriveeFocused && arriveeSuggestions.length > 0 && (
+            <View style={styles.suggestions}>
+              {arriveeSuggestions.map((v) => (
+                <Pressable
+                  key={v.id}
+                  style={styles.suggestionItem}
+                  onPress={() => {
+                    setSearchArrivee(v.nom);
+                    setArriveeFocused(false);
+                  }}
+                >
+                  <Ionicons name="location-sharp" size={13} color={colors.textMuted} />
+                  <Text style={styles.suggestionText}>{v.nom}</Text>
+                </Pressable>
+              ))}
+            </View>
+          )}
+        </View>
+
+        {/* ── En-tête section ─────────────────── */}
         <View style={styles.sectionRow}>
           <View style={styles.sectionTitleWrap}>
             <Text style={styles.sectionTitle}>Trajets disponibles</Text>
-            {!isLoading && listVoyages.length > 0 && (
+            {!isLoading && filteredVoyages.length > 0 && (
               <View style={styles.countBadge}>
-                <Text style={styles.countBadgeText}>{listVoyages.length}</Text>
+                <Text style={styles.countBadgeText}>{filteredVoyages.length}</Text>
               </View>
             )}
           </View>
-          <Pressable
-            onPress={() => refetch()}
-            disabled={isRefetching || isLoading}
-            style={({ pressed }) => [styles.refreshBtn, pressed && { opacity: 0.7 }]}
-          >
-            {isLoading || isRefetching ? (
-              <ActivityIndicator color={colors.primary} size="small" />
-            ) : (
-              <Text style={styles.refreshIcon}>↻</Text>
+          <View style={styles.sectionActions}>
+            {hasSearch && (
+              <Pressable
+                onPress={() => { setSearchDepart(""); setSearchArrivee(""); }}
+                style={styles.clearBtn}
+              >
+                <Text style={styles.clearBtnText}>Effacer</Text>
+              </Pressable>
             )}
-          </Pressable>
-        </View>
-
-        {/* ── Liste voyages ─────────── */}
-        {isLoading ? (
-          <ActivityIndicator color={colors.primary} style={{ marginTop: spacing["3xl"] }} />
-        ) : listVoyages.length === 0 ? (
-          <View style={styles.empty}>
-            <Text style={styles.emptyEmoji}>🗺️</Text>
-            <Text style={styles.emptyTitle}>Aucun trajet disponible</Text>
-            <Text style={styles.emptySub}>Revenez plus tard ou actualisez la page.</Text>
             <Pressable
               onPress={() => refetch()}
-              style={({ pressed }) => [styles.emptyBtn, pressed && { opacity: 0.8 }]}
+              disabled={isRefetching || isLoading}
+              style={({ pressed }) => [styles.refreshBtn, pressed && { opacity: 0.7 }]}
             >
-              <Text style={styles.emptyBtnTxt}>Actualiser</Text>
+              {isLoading || isRefetching ? (
+                <ActivityIndicator color={colors.primary} size="small" />
+              ) : (
+                <Ionicons name="refresh-outline" size={18} color={colors.primary} />
+              )}
             </Pressable>
+          </View>
+        </View>
+
+        {/* ── Liste voyages ───────────────────── */}
+        {isLoading ? (
+          <ActivityIndicator color={colors.primary} style={{ marginTop: spacing["3xl"] }} />
+        ) : filteredVoyages.length === 0 ? (
+          <View style={styles.empty}>
+            <View style={styles.emptyIconWrap}>
+              <Ionicons name="map-outline" size={36} color={colors.textMuted} />
+            </View>
+            {hasSearch ? (
+              <>
+                <Text style={styles.emptyTitle}>Aucun trajet trouvé</Text>
+                <Text style={styles.emptySub}>
+                  Aucun trajet disponible pour{" "}
+                  {[searchDepart, searchArrivee].filter(Boolean).join(" → ")}.
+                </Text>
+                <Pressable
+                  onPress={() => { setSearchDepart(""); setSearchArrivee(""); }}
+                  style={({ pressed }) => [styles.emptyBtn, pressed && { opacity: 0.8 }]}
+                >
+                  <Ionicons name="close-outline" size={15} color={colors.white} />
+                  <Text style={styles.emptyBtnTxt}>Effacer la recherche</Text>
+                </Pressable>
+              </>
+            ) : (
+              <>
+                <Text style={styles.emptyTitle}>Aucun trajet disponible</Text>
+                <Text style={styles.emptySub}>Revenez plus tard ou actualisez la page.</Text>
+                <Pressable
+                  onPress={() => refetch()}
+                  style={({ pressed }) => [styles.emptyBtn, pressed && { opacity: 0.8 }]}
+                >
+                  <Ionicons name="refresh-outline" size={15} color={colors.white} />
+                  <Text style={styles.emptyBtnTxt}>Actualiser</Text>
+                </Pressable>
+              </>
+            )}
           </View>
         ) : (
           <View style={styles.list}>
-            {listVoyages.map((v, i) => (
+            {filteredVoyages.map((v, i) => (
               <VoyageCard key={v.id} voyage={v} index={i} onMarkerFocus={focusOnMarker} />
             ))}
           </View>
@@ -317,11 +521,11 @@ export default function HomeScreen() {
   );
 }
 
-// ── Styles ────────────────────────────────────────────────────────────────────
+// ── Styles ─────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface },
 
-  // Carte
+  /* Carte */
   mapContainer: { height: MAP_HEIGHT },
   mapHeader: {
     position: "absolute",
@@ -384,84 +588,106 @@ const styles = StyleSheet.create({
     ...shadows.sm,
   },
   legendDot: { width: 8, height: 8, borderRadius: 4 },
+  legendLine: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+    width: 14,
+  },
+  legendDash: { width: 5, height: 3, borderRadius: 1.5 },
   legendText: {
     fontSize: typography.fontSize.xs,
     fontFamily: typography.fontFamily.medium,
     color: colors.textPrimary,
   },
 
-  // Panneau bas
+  /* Panneau bas */
   panel: {
     flex: 1,
     backgroundColor: colors.white,
     borderTopLeftRadius: radii["2xl"],
     borderTopRightRadius: radii["2xl"],
-    marginTop: -18,
+    marginTop: -20,
     ...shadows.lg,
   },
-  panelContent: { paddingTop: spacing.xl, paddingBottom: 40 },
+  panelContent: { paddingTop: spacing.lg, paddingBottom: 40 },
 
-  // Actions
+  /* Actions compactes */
   actions: {
     flexDirection: "row",
     gap: spacing.md,
     paddingHorizontal: spacing["2xl"],
-    marginBottom: spacing["2xl"],
+    marginBottom: spacing.lg,
   },
-  actionCard: {
+  actionBtn: {
     flex: 1,
-    borderRadius: radii["2xl"],
-    padding: spacing.lg,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     gap: spacing.sm,
-    overflow: "hidden",
-    ...shadows.md,
+    borderRadius: radii.full,
+    paddingVertical: 10,
+    paddingHorizontal: spacing.xl,
+    ...shadows.sm,
   },
-  actionGreen: { backgroundColor: colors.primary },
-  actionDark:  { backgroundColor: colors.black },
-  actionPressed: { opacity: 0.88 },
-  actionBgEmoji: {
-    position: "absolute",
-    fontSize: 72,
-    right: -10,
-    bottom: -8,
-    opacity: 0.1,
-  },
-  actionIconCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "rgba(255,255,255,0.18)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  actionIconEmoji: { fontSize: 20 },
-  actionBody: { flex: 1, gap: 2 },
-  actionTitle: {
-    fontSize: typography.fontSize.lg,
-    fontFamily: typography.fontFamily.bold,
-    color: colors.white,
-  },
-  actionDesc: {
-    fontSize: typography.fontSize.xs,
-    fontFamily: typography.fontFamily.regular,
-    color: "rgba(255,255,255,0.65)",
-  },
-  actionArrow: {
-    alignSelf: "flex-end",
-    backgroundColor: "rgba(255,255,255,0.15)",
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  actionArrowTxt: {
-    fontSize: typography.fontSize.base,
+  actionPressed: { opacity: 0.85 },
+  actionBtnText: {
+    fontSize: typography.fontSize.sm,
     fontFamily: typography.fontFamily.bold,
     color: colors.white,
   },
 
-  // Section header
+  /* Recherche */
+  searchCard: {
+    marginHorizontal: spacing["2xl"],
+    marginBottom: spacing.xl,
+    backgroundColor: colors.surface,
+    borderRadius: radii.xl,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: "hidden",
+    ...shadows.sm,
+  },
+  searchField: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    gap: spacing.sm,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.regular,
+    color: colors.textPrimary,
+    paddingVertical: 0,
+  },
+  searchDivider: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginHorizontal: spacing.lg,
+  },
+  suggestions: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    backgroundColor: colors.white,
+  },
+  suggestionItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  suggestionText: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.medium,
+    color: colors.textPrimary,
+  },
+
+  /* Section header */
   sectionRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -493,6 +719,24 @@ const styles = StyleSheet.create({
     fontFamily: typography.fontFamily.bold,
     color: colors.white,
   },
+  sectionActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  clearBtn: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+    borderRadius: radii.full,
+    backgroundColor: colors.errorBg,
+    borderWidth: 1,
+    borderColor: `${colors.error}30`,
+  },
+  clearBtnText: {
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamily.semiBold,
+    color: colors.error,
+  },
   refreshBtn: {
     width: 34,
     height: 34,
@@ -503,20 +747,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  refreshIcon: {
-    fontSize: 18,
-    color: colors.primary,
-    fontFamily: typography.fontFamily.bold,
-    lineHeight: 20,
-  },
 
-  // Liste
+  /* Liste */
   list: {
     paddingHorizontal: spacing["2xl"],
     gap: spacing.md,
   },
 
-  // Carte voyage
+  /* Carte voyage */
   voyageCard: {
     backgroundColor: colors.white,
     borderRadius: radii.xl,
@@ -554,9 +792,12 @@ const styles = StyleSheet.create({
     borderRadius: radii.full,
   },
   statusDot: { width: 7, height: 7, borderRadius: 4 },
-  statusText: { fontSize: typography.fontSize.xs, fontFamily: typography.fontFamily.semiBold },
+  statusText: {
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamily.semiBold,
+  },
 
-  // Timeline
+  /* Timeline */
   timeline: {
     flexDirection: "row",
     alignItems: "center",
@@ -587,13 +828,12 @@ const styles = StyleSheet.create({
   },
   timelineSpacer: { flex: 1 },
 
-  // Point départ
+  /* Point départ */
   pointRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.xs,
   },
-  pointIcon: { fontSize: 12 },
   pointText: {
     flex: 1,
     fontSize: typography.fontSize.sm,
@@ -601,7 +841,7 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
 
-  // Bas de carte
+  /* Bas de carte */
   cardBottom: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -659,7 +899,7 @@ const styles = StyleSheet.create({
   },
   placesTextFull: { color: colors.error },
 
-  // Vide
+  /* État vide */
   empty: {
     marginHorizontal: spacing["2xl"],
     marginTop: spacing["2xl"],
@@ -671,7 +911,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  emptyEmoji: { fontSize: 44 },
+  emptyIconWrap: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: colors.border,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   emptyTitle: {
     fontSize: typography.fontSize.lg,
     fontFamily: typography.fontFamily.bold,
@@ -690,6 +937,9 @@ const styles = StyleSheet.create({
     borderRadius: radii.full,
     paddingHorizontal: spacing["3xl"],
     paddingVertical: spacing.md,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
   },
   emptyBtnTxt: {
     fontSize: typography.fontSize.sm,

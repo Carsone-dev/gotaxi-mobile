@@ -18,6 +18,7 @@ import { registerSchema, type RegisterForm } from "@/src/utils/validators";
 import { getErrorCode, getErrorMessage } from "@/src/utils/error-handler";
 import { Button } from "@/src/components/ui/Button";
 import { Input } from "@/src/components/ui/Input";
+import { PhoneInput } from "@/src/components/ui/PhoneInput";
 import { useToast } from "@/src/components/common/Toast";
 import { colors, typography, spacing } from "@/src/theme";
 
@@ -45,10 +46,7 @@ export default function RegisterScreen() {
         email: data.email || undefined,
       });
       showToast(t("auth.register.success"), "success");
-      router.push({
-        pathname: "/(auth)/otp",
-        params: { telephone: data.telephone, context: "register" },
-      });
+      router.replace("/(auth)/login");
     } catch (e) {
       const code = getErrorCode(e);
       if (code === "PHONE_ALREADY_EXISTS") {
@@ -117,15 +115,12 @@ export default function RegisterScreen() {
             name="telephone"
             control={control}
             render={({ field: { onChange, onBlur, value } }) => (
-              <Input
+              <PhoneInput
                 label={t("auth.register.phone_label")}
-                placeholder="+22901000000"
                 value={value}
                 onChangeText={onChange}
                 onBlur={onBlur}
                 error={errors.telephone?.message}
-                keyboardType="phone-pad"
-                autoComplete="tel"
               />
             )}
           />

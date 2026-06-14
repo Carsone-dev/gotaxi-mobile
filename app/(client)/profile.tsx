@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -6,12 +6,18 @@ import {
   ScrollView,
   Pressable,
   Platform,
+  Image,
+  Alert,
+  ActivityIndicator,
 } from "react-native";
+import * as ImagePicker from "expo-image-picker";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { router } from "expo-router";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import { useAuthStore } from "@/src/stores/authStore";
+import { usersApi } from "@/src/api/endpoints/users";
 import { colors, typography, spacing, radii, shadows } from "@/src/theme";
 
 // ── Composants utilitaires ────────────────────────────────────────────────────
@@ -83,16 +89,70 @@ function ModeToggle({ active, onPress }: { active: boolean; onPress: () => void 
 
 // ── Écran ─────────────────────────────────────────────────────────────────────
 export default function ProfileScreen() {
+  const insets = useSafeAreaInsets();
   const user               = useAuthStore((s) => s.user);
+  const setUser            = useAuthStore((s) => s.setUser);
   const logout             = useAuthStore((s) => s.logout);
   const toggleChauffeur    = useAuthStore((s) => s.toggleChauffeurMode);
   const isChauffeurMode    = useAuthStore((s) => s.isChauffeurMode);
   const isChauffeur        = user?.role === "CHAUFFEUR";
 
+  const [uploading, setUploading]   = useState(false);
+  const [localPhoto, setLocalPhoto] = useState<string | null>(null);
+
   const initials    = user ? `${user.prenom[0]}${user.nom[0]}`.toUpperCase() : "?";
+  const photoUrl    = localPhoto ?? user?.photo_url ?? null;
   const memberSince = user?.created_at
     ? format(new Date(user.created_at), "MMMM yyyy", { locale: fr })
     : "—";
+
+  const handlePhotoSelected = async (uri: string) => {
+    setLocalPhoto(uri);
+    setUploading(true);
+    try {
+      const updated = await usersApi.uploadPhoto(uri);
+      setUser(updated);
+      setLocalPhoto(null);
+    } catch {
+      setLocalPhoto(null);
+      Alert.alert("Erreur", "Impossible d'enregistrer la photo. Réessayez.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const openPhotoPicker = () => {
+    Alert.alert(
+      "Photo de profil",
+      "Choisissez comment ajouter votre photo",
+      [
+        {
+          text: "📷  Prendre une photo",
+          onPress: async () => {
+            const { status } = await ImagePicker.requestCameraPermissionsAsync();
+            if (status !== "granted") {
+              Alert.alert("Permission refusée", "Autorisez l'accès à la caméra dans les paramètres.");
+              return;
+            }
+            const result = await ImagePicker.launchCameraAsync({
+              allowsEditing: true, aspect: [1, 1], quality: 0.9,
+            });
+            if (!result.canceled && result.assets[0]) handlePhotoSelected(result.assets[0].uri);
+          },
+        },
+        {
+          text: "🖼  Choisir depuis la galerie",
+          onPress: async () => {
+            const result = await ImagePicker.launchImageLibraryAsync({
+              mediaTypes: ["images"], allowsEditing: true, aspect: [1, 1], quality: 0.9,
+            });
+            if (!result.canceled && result.assets[0]) handlePhotoSelected(result.assets[0].uri);
+          },
+        },
+        { text: "Annuler", style: "cancel" },
+      ],
+    );
+  };
 
   const handleLogout = async () => {
     await logout();
@@ -102,7 +162,7 @@ export default function ProfileScreen() {
   return (
     <View style={styles.screen}>
       {/* ── Header fixe ──────────────────────────────────────────── */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
         <Pressable
           onPress={() => router.back()}
           style={({ pressed }) => [styles.backBtn, pressed && { opacity: 0.7 }]}
@@ -119,12 +179,35 @@ export default function ProfileScreen() {
       >
         {/* ── Hero ───────────────────────────────────────────────── */}
         <Animated.View entering={FadeInDown.duration(300)} style={styles.hero}>
-          {/* Avatar */}
-          <View style={styles.avatarRing}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{initials}</Text>
+          {/* Avatar avec sélecteur photo */}
+          <Pressable
+            onPress={openPhotoPicker}
+            disabled={uploading}
+            style={styles.avatarWrap}
+          >
+            <View style={styles.avatarRing}>
+              {photoUrl ? (
+                <Image source={{ uri: photoUrl }} style={styles.avatarImage} resizeMode="cover" />
+              ) : (
+                <View style={styles.avatar}>
+                  <Text style={styles.avatarText}>{initials}</Text>
+                </View>
+              )}
             </View>
-          </View>
+            {uploading && (
+              <View style={styles.avatarOverlay}>
+                <ActivityIndicator color={colors.white} size="small" />
+              </View>
+            )}
+            <View style={styles.cameraBtn}>
+              <Text style={styles.cameraIcon}>📷</Text>
+            </View>
+          </Pressable>
+
+          {/* Hint si pas de photo */}
+          {!user?.photo_url && !localPhoto && (
+            <Text style={styles.photoHint}>Appuyez pour ajouter une photo de profil</Text>
+          )}
 
           {/* Nom + téléphone */}
           <Text style={styles.heroName}>{user?.prenom} {user?.nom}</Text>
@@ -200,7 +283,7 @@ export default function ProfileScreen() {
           <MenuRow
             icon="✏️"
             label="Modifier le profil"
-            onPress={() => {}}
+            onPress={() => router.push("/(client)/edit-profile" as any)}
           />
         </Animated.View>
 
@@ -210,13 +293,13 @@ export default function ProfileScreen() {
           <MenuRow
             icon="❓"
             label="Aide et FAQ"
-            onPress={() => {}}
+            onPress={() => router.push("/(client)/support" as any)}
             separator
           />
           <MenuRow
             icon="ℹ️"
             label="À propos de GoTaxi"
-            onPress={() => {}}
+            onPress={() => router.push("/(client)/about" as any)}
           />
         </Animated.View>
 
@@ -297,20 +380,22 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     ...shadows.sm,
   },
+  avatarWrap: {
+    alignSelf: "center",
+    marginBottom: spacing.sm,
+  },
   avatarRing: {
-    width: 92,
-    height: 92,
-    borderRadius: 46,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
     borderWidth: 3,
     borderColor: colors.primary,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: spacing.xs,
+    overflow: "hidden",
+    ...shadows.md,
   },
+  avatarImage: { width: "100%", height: "100%" },
   avatar: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    flex: 1,
     backgroundColor: colors.primary,
     alignItems: "center",
     justifyContent: "center",
@@ -319,6 +404,35 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize["3xl"],
     fontFamily: typography.fontFamily.bold,
     color: colors.white,
+  },
+  avatarOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 50,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cameraBtn: {
+    position: "absolute",
+    bottom: 2,
+    right: 2,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: colors.white,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: colors.surface,
+    ...shadows.sm,
+  },
+  cameraIcon: { fontSize: 13 },
+  photoHint: {
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamily.regular,
+    color: colors.primary,
+    textAlign: "center",
+    marginBottom: spacing.xs,
   },
   heroName: {
     fontSize: typography.fontSize["2xl"],

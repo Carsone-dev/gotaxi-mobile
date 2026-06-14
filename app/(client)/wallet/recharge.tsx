@@ -11,6 +11,7 @@ import {
   Platform,
   Linking,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useRechargeInitiate, useWalletActivity, useWallet } from "@/src/hooks/useWallet";
@@ -22,10 +23,12 @@ import { colors, typography, spacing, radii, shadows } from "@/src/theme";
 import type { OperateurMM } from "@/src/api/types";
 
 // ── Config opérateurs ─────────────────────────────────────────────────────────
-const OPERATEURS: { id: OperateurMM; label: string; logo: string; color: string; bg: string }[] = [
+const OPERATEURS: { id: OperateurMM; label: string; sublabel?: string; logo: string; color: string; bg: string }[] = [
+  { id: "FEDAPAY",      label: "FedaPay",      sublabel: "MTN · Moov · Orange", logo: "💳", color: colors.fedapayPurple, bg: "#F3EEFF" },
   { id: "MTN_MOMO",     label: "MTN MoMo",     logo: "📱", color: colors.mtnYellow,    bg: "#FFFBEA" },
   { id: "ORANGE_MONEY", label: "Orange Money", logo: "🔶", color: colors.orangeOrange, bg: "#FFF3EB" },
   { id: "MOOV_MONEY",   label: "Moov Money",   logo: "💠", color: colors.moovBlue,     bg: "#E8F9FF" },
+  { id: "CELTIS",       label: "Celtis",       logo: "🔵", color: colors.celtisBlue,   bg: "#E6F6FD" },
 ];
 
 const MONTANTS_RAPIDES = [1000, 2000, 5000, 10000, 25000, 50000];
@@ -34,10 +37,12 @@ const MONTANTS_RAPIDES = [1000, 2000, 5000, 10000, 25000, 50000];
 function ConfirmationStep({
   operateur,
   message,
+  paymentUrl,
   onBack,
 }: {
   operateur: OperateurMM;
   message: string;
+  paymentUrl?: string;
   onBack: () => void;
 }) {
   const { showToast } = useToast();
@@ -66,6 +71,7 @@ function ConfirmationStep({
     }
   };
 
+  const isFedaPay = operateur === "FEDAPAY";
   const opCfg = OPERATEURS.find((o) => o.id === operateur)!;
 
   return (
@@ -73,7 +79,12 @@ function ConfirmationStep({
       {/* Badge opérateur */}
       <View style={[styles.confirmOpBadge, { backgroundColor: opCfg.bg }]}>
         <Text style={styles.confirmOpLogo}>{opCfg.logo}</Text>
-        <Text style={[styles.confirmOpLabel, { color: opCfg.color }]}>{opCfg.label}</Text>
+        <View>
+          <Text style={[styles.confirmOpLabel, { color: opCfg.color }]}>{opCfg.label}</Text>
+          {opCfg.sublabel && (
+            <Text style={[styles.confirmOpSublabel, { color: opCfg.color }]}>{opCfg.sublabel}</Text>
+          )}
+        </View>
       </View>
 
       {/* Message backend */}
@@ -82,24 +93,54 @@ function ConfirmationStep({
         <Text style={styles.confirmMsg}>{message}</Text>
       </View>
 
+      {/* Bouton FedaPay — ouvrir le lien de paiement */}
+      {isFedaPay && paymentUrl ? (
+        <Pressable
+          style={({ pressed }) => [styles.fedapayBtn, pressed && { opacity: 0.85 }]}
+          onPress={() => Linking.openURL(paymentUrl)}
+        >
+          <Ionicons name="open-outline" size={20} color={colors.white} />
+          <Text style={styles.fedapayBtnTxt}>Ouvrir la page de paiement FedaPay</Text>
+        </Pressable>
+      ) : null}
+
       {/* Instructions */}
       <View style={styles.stepsCard}>
         <Text style={styles.stepsTitle}>Que faire maintenant ?</Text>
-        <View style={styles.step}>
-          <View style={styles.stepNum}><Text style={styles.stepNumTxt}>1</Text></View>
-          <Text style={styles.stepTxt}>Confirmez le paiement sur votre téléphone Mobile Money</Text>
-        </View>
-        <View style={styles.step}>
-          <View style={styles.stepNum}><Text style={styles.stepNumTxt}>2</Text></View>
-          <Text style={styles.stepTxt}>Revenez ici et appuyez sur « Vérifier le paiement »</Text>
-        </View>
-        <View style={styles.step}>
-          <View style={styles.stepNum}><Text style={styles.stepNumTxt}>3</Text></View>
-          <Text style={styles.stepTxt}>Votre solde est mis à jour instantanément</Text>
-        </View>
+        {isFedaPay ? (
+          <>
+            <View style={styles.step}>
+              <View style={styles.stepNum}><Text style={styles.stepNumTxt}>1</Text></View>
+              <Text style={styles.stepTxt}>Appuyez sur « Ouvrir la page de paiement FedaPay » ci-dessus</Text>
+            </View>
+            <View style={styles.step}>
+              <View style={styles.stepNum}><Text style={styles.stepNumTxt}>2</Text></View>
+              <Text style={styles.stepTxt}>Choisissez votre opérateur (MTN, Moov, Orange…) et confirmez</Text>
+            </View>
+            <View style={styles.step}>
+              <View style={styles.stepNum}><Text style={styles.stepNumTxt}>3</Text></View>
+              <Text style={styles.stepTxt}>Revenez ici et appuyez sur « Vérifier le paiement »</Text>
+            </View>
+          </>
+        ) : (
+          <>
+            <View style={styles.step}>
+              <View style={styles.stepNum}><Text style={styles.stepNumTxt}>1</Text></View>
+              <Text style={styles.stepTxt}>Confirmez le paiement sur votre téléphone Mobile Money</Text>
+            </View>
+            <View style={styles.step}>
+              <View style={styles.stepNum}><Text style={styles.stepNumTxt}>2</Text></View>
+              <Text style={styles.stepTxt}>Revenez ici et appuyez sur « Vérifier le paiement »</Text>
+            </View>
+            <View style={styles.step}>
+              <View style={styles.stepNum}><Text style={styles.stepNumTxt}>3</Text></View>
+              <Text style={styles.stepTxt}>Votre solde est mis à jour instantanément</Text>
+            </View>
+          </>
+        )}
       </View>
 
-      {/* Boutons */}
+      {/* Vérifier */}
       <Pressable
         style={({ pressed }) => [styles.confirmBtn, isPending && styles.btnDisabled, pressed && { opacity: 0.85 }]}
         onPress={handleConfirm}
@@ -124,6 +165,7 @@ function ConfirmationStep({
 
 // ── Écran principal ───────────────────────────────────────────────────────────
 export default function RechargeScreen() {
+  const insets = useSafeAreaInsets();
   const { showToast } = useToast();
   const { mutateAsync: initiate, isPending } = useRechargeInitiate();
 
@@ -134,9 +176,13 @@ export default function RechargeScreen() {
   // Phase 2 après initiation
   const [phase, setPhase] = useState<"form" | "confirm">("form");
   const [confirmMsg, setConfirmMsg] = useState("");
+  const [confirmPaymentUrl, setConfirmPaymentUrl] = useState<string | undefined>();
 
   const montantNum = parseInt(montant.replace(/\D/g, ""), 10) || 0;
-  const isValid = montantNum >= 500 && montantNum <= 1_000_000 && telephone.trim().length >= 8;
+  // FedaPay ne demande pas de numéro de téléphone dans le formulaire (géré côté checkout)
+  const phoneRequired = operateur !== "FEDAPAY";
+  const isValid = montantNum >= 500 && montantNum <= 1_000_000 &&
+    (!phoneRequired || telephone.trim().length >= 8);
 
   const handleInitiate = async () => {
     if (!isValid) return;
@@ -147,6 +193,7 @@ export default function RechargeScreen() {
         telephone: telephone.trim(),
       });
       setConfirmMsg(result.message);
+      setConfirmPaymentUrl(result.payment_url);
       setPhase("confirm");
     } catch (e) {
       showToast(getErrorMessage(e), "error");
@@ -171,6 +218,7 @@ export default function RechargeScreen() {
           <ConfirmationStep
             operateur={operateur}
             message={confirmMsg}
+            paymentUrl={confirmPaymentUrl}
             onBack={() => setPhase("form")}
           />
         ) : (
@@ -242,21 +290,32 @@ export default function RechargeScreen() {
               <Text style={styles.inputHint}>Maximum : 1 000 000 FCFA</Text>
             )}
 
-            {/* Téléphone Mobile Money */}
-            <Text style={[styles.fieldLabel, { marginTop: spacing.lg }]}>
-              Numéro Mobile Money
-            </Text>
-            <View style={styles.inputWrap}>
-              <TextInput
-                style={[styles.amountInput, { flex: 1 }]}
-                placeholder="+22961000000"
-                placeholderTextColor={colors.textMuted}
-                keyboardType="phone-pad"
-                value={telephone}
-                onChangeText={setTelephone}
-              />
-            </View>
-            <Text style={styles.fieldHint}>Numéro associé à votre compte Mobile Money</Text>
+            {/* Téléphone Mobile Money — masqué pour FedaPay */}
+            {operateur !== "FEDAPAY" ? (
+              <>
+                <Text style={[styles.fieldLabel, { marginTop: spacing.lg }]}>
+                  Numéro Mobile Money
+                </Text>
+                <View style={styles.inputWrap}>
+                  <TextInput
+                    style={[styles.amountInput, { flex: 1 }]}
+                    placeholder="+22961000000"
+                    placeholderTextColor={colors.textMuted}
+                    keyboardType="phone-pad"
+                    value={telephone}
+                    onChangeText={setTelephone}
+                  />
+                </View>
+                <Text style={styles.fieldHint}>Numéro associé à votre compte Mobile Money</Text>
+              </>
+            ) : (
+              <View style={styles.fedapayNote}>
+                <Ionicons name="information-circle-outline" size={16} color={colors.fedapayPurple} />
+                <Text style={styles.fedapayNoteTxt}>
+                  Vous choisirez votre opérateur (MTN, Moov, Orange…) directement sur la page FedaPay après avoir validé le montant.
+                </Text>
+              </View>
+            )}
 
             {/* Récapitulatif */}
             {isValid && (
@@ -436,6 +495,24 @@ const styles = StyleSheet.create({
   submitBtnTxt: { fontSize: typography.fontSize.lg, fontFamily: typography.fontFamily.bold, color: colors.white },
   btnDisabled: { opacity: 0.45 },
 
+  // Note FedaPay dans le formulaire
+  fedapayNote: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: spacing.sm,
+    backgroundColor: "#F3EEFF",
+    borderRadius: radii.lg,
+    padding: spacing.md,
+    marginTop: spacing.lg,
+  },
+  fedapayNoteTxt: {
+    flex: 1,
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.regular,
+    color: colors.fedapayPurple,
+    lineHeight: 18,
+  },
+
   // Phase 2 confirm
   confirmContainer: { gap: spacing.lg },
   confirmOpBadge: {
@@ -448,6 +525,20 @@ const styles = StyleSheet.create({
   },
   confirmOpLogo: { fontSize: 32 },
   confirmOpLabel: { fontSize: typography.fontSize.xl, fontFamily: typography.fontFamily.bold },
+  confirmOpSublabel: { fontSize: typography.fontSize.xs, fontFamily: typography.fontFamily.regular, opacity: 0.75 },
+
+  // Bouton ouvrir FedaPay
+  fedapayBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.sm,
+    backgroundColor: colors.fedapayPurple,
+    borderRadius: radii.xl,
+    paddingVertical: spacing.xl,
+    ...shadows.md,
+  },
+  fedapayBtnTxt: { fontSize: typography.fontSize.base, fontFamily: typography.fontFamily.bold, color: colors.white },
   confirmMsgCard: {
     flexDirection: "row",
     gap: spacing.sm,

@@ -72,6 +72,15 @@ export const chauffeursApi = {
     return data;
   },
 
+  uploadVehiculePhoto: async (id: string, uri: string): Promise<Vehicule> => {
+    const formData = new FormData();
+    formData.append("photo", { uri, name: "vehicule.jpg", type: "image/jpeg" } as unknown as Blob);
+    const { data } = await apiClient.post<Vehicule>(`/chauffeurs/me/vehicules/${id}/photo`, formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+    return data;
+  },
+
   updateVehicule: async (id: string, payload: VehiculeUpdatePayload): Promise<Vehicule> => {
     const { data } = await apiClient.patch<Vehicule>(`/chauffeurs/me/vehicules/${id}`, payload);
     return data;

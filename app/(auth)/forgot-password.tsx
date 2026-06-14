@@ -16,7 +16,7 @@ import { authApi } from "@/src/api/endpoints/auth";
 import { phoneSchema } from "@/src/utils/validators";
 import { getErrorMessage } from "@/src/utils/error-handler";
 import { Button } from "@/src/components/ui/Button";
-import { Input } from "@/src/components/ui/Input";
+import { PhoneInput } from "@/src/components/ui/PhoneInput";
 import { useToast } from "@/src/components/common/Toast";
 import { colors, typography, spacing } from "@/src/theme";
 
@@ -63,15 +63,12 @@ export default function ForgotPasswordScreen() {
           name="telephone"
           control={control}
           render={({ field: { onChange, onBlur, value } }) => (
-            <Input
+            <PhoneInput
               label={t("auth.login.phone_label")}
-              placeholder="+22901000000"
               value={value}
               onChangeText={onChange}
               onBlur={onBlur}
               error={errors.telephone?.message}
-              keyboardType="phone-pad"
-              autoFocus
             />
           )}
         />

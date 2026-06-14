@@ -10,6 +10,7 @@ import {
   Alert,
   Platform,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { router, useFocusEffect } from "expo-router";
 import { format } from "date-fns";
@@ -194,6 +195,7 @@ function ReservationCard({ reservation, index }: { reservation: Reservation; ind
 
 // ── Écran ─────────────────────────────────────────────────────────────────────
 export default function ReservationsScreen() {
+  const insets = useSafeAreaInsets();
   const { data, isLoading, refetch, isRefetching } = useMyReservations();
 
   // Recharger à chaque fois que l'onglet prend le focus
@@ -224,7 +226,7 @@ export default function ReservationsScreen() {
   return (
     <View style={styles.screen}>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
         <View style={styles.headerLeft}>
           <Text style={styles.headerTitle}>Mes réservations</Text>
           <Text style={styles.headerSub}>Suivez l'état de vos trajets réservés</Text>

@@ -11,7 +11,9 @@ import {
   Platform,
   Modal,
   FlatList,
+  ScrollView,
   Dimensions,
+  Image,
 } from "react-native";
 import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { format } from "date-fns";
@@ -19,11 +21,15 @@ import { fr } from "date-fns/locale";
 import { router } from "expo-router";
 import { useMyVehicules } from "@/src/hooks/useChauffeur";
 import { useCreateVoyage } from "@/src/hooks/useVoyages";
+import { useTarifTrajet } from "@/src/hooks/useTarifs";
 import { getErrorMessage } from "@/src/utils/error-handler";
 import { useToast } from "@/src/components/common/Toast";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors, typography, spacing, radii, shadows } from "@/src/theme";
+import { resolveMediaUrl } from "@/src/constants/app";
 import type { TypeVehicule } from "@/src/api/types";
-import { VILLES, VILLES_LIST } from "@/src/constants/cities";
+import { useVilles, useGaresByVille } from "@/src/hooks/useGares";
+import type { GareRead } from "@/src/api/endpoints/gares";
 import Animated, {
   FadeInRight, FadeOutLeft,
   FadeInLeft, FadeOutRight,
@@ -53,18 +59,13 @@ function nextHour(): Date {
 
 // ─── Modal sélecteur de ville ─────────────────────────────────────────────────
 
-function CityModal({
-  visible,
-  title,
-  selected,
-  onSelect,
-  onClose,
+function ListModal<T>({
+  visible, title, items, keyFn, labelFn, selectedKey, onSelect, onClose,
 }: {
-  visible: boolean;
-  title: string;
-  selected: string;
-  onSelect: (v: string) => void;
-  onClose: () => void;
+  visible: boolean; title: string;
+  items: T[]; keyFn: (item: T) => string; labelFn: (item: T) => string;
+  selectedKey: string;
+  onSelect: (item: T) => void; onClose: () => void;
 }) {
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -77,22 +78,32 @@ function CityModal({
             <Text style={modalStyles.closeTxt}>✕</Text>
           </Pressable>
         </View>
-        <FlatList
-          data={VILLES_LIST}
-          keyExtractor={(item) => item}
-          style={modalStyles.list}
-          renderItem={({ item }) => (
-            <Pressable
-              style={[modalStyles.item, selected === item && modalStyles.itemActive]}
-              onPress={() => { onSelect(item); onClose(); }}
-            >
-              <Text style={[modalStyles.itemText, selected === item && modalStyles.itemTextActive]}>
-                {item}
-              </Text>
-              {selected === item && <Text style={modalStyles.itemCheck}>✓</Text>}
-            </Pressable>
-          )}
-        />
+        {items.length === 0 ? (
+          <View style={{ padding: 24, alignItems: "center" }}>
+            <Text style={modalStyles.itemText}>Aucun élément disponible</Text>
+          </View>
+        ) : (
+          <FlatList
+            data={items}
+            keyExtractor={keyFn}
+            style={modalStyles.list}
+            renderItem={({ item }) => {
+              const k = keyFn(item);
+              const isSelected = selectedKey === k;
+              return (
+                <Pressable
+                  style={[modalStyles.item, isSelected && modalStyles.itemActive]}
+                  onPress={() => { onSelect(item); onClose(); }}
+                >
+                  <Text style={[modalStyles.itemText, isSelected && modalStyles.itemTextActive]}>
+                    {labelFn(item)}
+                  </Text>
+                  {isSelected && <Text style={modalStyles.itemCheck}>✓</Text>}
+                </Pressable>
+              );
+            }}
+          />
+        )}
       </View>
     </Modal>
   );
@@ -208,8 +219,10 @@ function StepDot({ index, activeStep }: { index: number; activeStep: number }) {
 
 export default function PublishVoyageScreen() {
   const { showToast } = useToast();
+  const { bottom: safeBottom } = useSafeAreaInsets();
   const { data: vehicules, isLoading: loadingVehicules } = useMyVehicules();
   const { mutateAsync: createVoyage, isPending } = useCreateVoyage();
+  const { data: villes = [] } = useVilles();
 
   // ── Navigation par étape ──
   const [step, setStep] = useState(0);
@@ -227,8 +240,12 @@ export default function PublishVoyageScreen() {
   const [vehiculeId, setVehiculeId] = useState("");
   const [villeDepart, setVilleDepart] = useState("");
   const [villeArrivee, setVilleArrivee] = useState("");
-  const [pointDepart, setPointDepart] = useState("");
-  const [pointArrivee, setPointArrivee] = useState("");
+  const [villeIdDepart, setVilleIdDepart] = useState("");
+  const [villeIdArrivee, setVilleIdArrivee] = useState("");
+  const [gareDepart, setGareDepart] = useState<GareRead | null>(null);
+  const [gareArrivee, setGareArrivee] = useState<GareRead | null>(null);
+  const { data: garesDepart = [] } = useGaresByVille(villeIdDepart || null);
+  const { data: garesArrivee = [] } = useGaresByVille(villeIdArrivee || null);
   const [departure, setDeparture] = useState<Date>(nextHour);
   const [prix, setPrix] = useState("");
   const [places, setPlaces] = useState(4);
@@ -243,16 +260,31 @@ export default function PublishVoyageScreen() {
   const [manualDate, setManualDate] = useState("");
   const [manualTime, setManualTime] = useState("");
 
-  // ── Sélecteur de ville ──
+  // ── Sélecteurs modaux ──
   const [cityTarget, setCityTarget] = useState<"depart" | "arrivee" | null>(null);
+  const [gareTarget, setGareTarget] = useState<"depart" | "arrivee" | null>(null);
 
   const activeVehicules = vehicules?.filter((v) => v.actif) ?? [];
+  const selectedVehicule = activeVehicules.find((v) => v.id === vehiculeId);
+  const vehiculeCapacity: number = selectedVehicule?.nombre_places ?? 4;
+
+  const { data: tarif, isLoading: tarifLoading } = useTarifTrajet(
+    gareDepart?.ville_id ?? "",
+    gareArrivee?.ville_id ?? ""
+  );
+  const prixReco = tarif?.prix_recommande ?? null;
+  // prix_max peut être null en base — on tombe sur prix_recommande comme plafond minimal
+  const prixMax = tarif ? (tarif.prix_max ?? tarif.prix_recommande ?? null) : null;
 
   useEffect(() => {
     if (activeVehicules.length === 1 && !vehiculeId) {
       setVehiculeId(activeVehicules[0].id);
     }
   }, [activeVehicules.length]);
+
+  useEffect(() => {
+    if (selectedVehicule) setPlaces(selectedVehicule.nombre_places);
+  }, [vehiculeId]);
 
   // ── Date helpers ──
   const syncManual = (d: Date) => {
@@ -316,15 +348,12 @@ export default function PublishVoyageScreen() {
     switch (step) {
       case 0: return !!vehiculeId;
       case 1:
-        return (
-          !!villeDepart &&
-          !!villeArrivee &&
-          villeDepart !== villeArrivee &&
-          pointDepart.trim().length >= 5 &&
-          pointArrivee.trim().length >= 5
-        );
+        return !!(gareDepart && gareArrivee && gareDepart.id !== gareArrivee.id);
       case 2: return departure > new Date();
-      case 3: return !!prix && !isNaN(Number(prix)) && Number(prix) >= 500;
+      case 3: {
+        const n = Number(prix);
+        return !!prix && !isNaN(n) && n > 0;
+      }
       case 4: return true;
       default: return false;
     }
@@ -350,18 +379,17 @@ export default function PublishVoyageScreen() {
   };
 
   const handlePublish = async () => {
-    const coordDepart = VILLES[villeDepart] ?? { lat: 0, lng: 0 };
-    const coordArrivee = VILLES[villeArrivee] ?? { lat: 0, lng: 0 };
+    if (!gareDepart || !gareArrivee) return;
     try {
       await createVoyage({
-        ville_depart: villeDepart,
-        ville_arrivee: villeArrivee,
-        point_depart: pointDepart.trim(),
-        point_arrivee: pointArrivee.trim(),
-        lat_depart: coordDepart.lat,
-        lng_depart: coordDepart.lng,
-        lat_arrivee: coordArrivee.lat,
-        lng_arrivee: coordArrivee.lng,
+        ville_depart: gareDepart.ville.nom,
+        ville_arrivee: gareArrivee.ville.nom,
+        point_depart: gareDepart.nom,
+        point_arrivee: gareArrivee.nom,
+        lat_depart: gareDepart.lat ?? 0,
+        lng_depart: gareDepart.lng ?? 0,
+        lat_arrivee: gareArrivee.lat ?? 0,
+        lng_arrivee: gareArrivee.lng ?? 0,
         date_depart: departure.toISOString(),
         prix_par_place: Number(prix),
         nombre_places_total: places,
@@ -455,11 +483,10 @@ export default function PublishVoyageScreen() {
             <StepItineraire
               villeDepart={villeDepart}
               villeArrivee={villeArrivee}
-              pointDepart={pointDepart}
-              pointArrivee={pointArrivee}
+              gareDepart={gareDepart}
+              gareArrivee={gareArrivee}
               onOpenCity={(target) => setCityTarget(target)}
-              onChangePointDepart={setPointDepart}
-              onChangePointArrivee={setPointArrivee}
+              onOpenGare={(target) => setGareTarget(target)}
             />
           )}
           {step === 2 && (
@@ -488,6 +515,12 @@ export default function PublishVoyageScreen() {
               places={places}
               onPrix={setPrix}
               onPlaces={setPlaces}
+              vehiculeCapacity={vehiculeCapacity}
+              villeDepart={gareDepart?.ville.nom ?? ""}
+              villeArrivee={gareArrivee?.ville.nom ?? ""}
+              prixMax={prixMax}
+              prixReco={prixReco}
+              tarifLoading={tarifLoading}
             />
           )}
           {step === 4 && (
@@ -505,7 +538,7 @@ export default function PublishVoyageScreen() {
       </View>
 
       {/* ── Pied de page navigation ── */}
-      <View style={styles.footer}>
+      <View style={[styles.footer, { paddingBottom: Math.max(safeBottom, spacing["2xl"]) }]}>
         <Pressable style={styles.btnBack} onPress={handleBack}>
           <Text style={styles.btnBackTxt}>{step === 0 ? "Annuler" : "← Retour"}</Text>
         </Pressable>
@@ -526,21 +559,54 @@ export default function PublishVoyageScreen() {
       </View>
 
       {/* ── Modal sélecteur de ville ── */}
-      <CityModal
+      <ListModal
         visible={cityTarget !== null}
         title={cityTarget === "depart" ? "Ville de départ" : "Ville d'arrivée"}
-        selected={cityTarget === "depart" ? villeDepart : villeArrivee}
+        items={villes}
+        keyFn={(v) => v.id}
+        labelFn={(v) => v.nom}
+        selectedKey={cityTarget === "depart" ? villeIdDepart : villeIdArrivee}
         onSelect={(v) => {
-          if (cityTarget === "depart") setVilleDepart(v);
-          else setVilleArrivee(v);
+          if (cityTarget === "depart") {
+            setVilleDepart(v.nom);
+            setVilleIdDepart(v.id);
+            setGareDepart(null);
+          } else {
+            setVilleArrivee(v.nom);
+            setVilleIdArrivee(v.id);
+            setGareArrivee(null);
+          }
         }}
         onClose={() => setCityTarget(null)}
+      />
+
+      {/* ── Modal sélecteur de gare ── */}
+      <ListModal
+        visible={gareTarget !== null}
+        title={gareTarget === "depart" ? "Gare de départ" : "Gare d'arrivée"}
+        items={gareTarget === "depart" ? garesDepart : garesArrivee}
+        keyFn={(g) => g.id}
+        labelFn={(g) => g.nom}
+        selectedKey={gareTarget === "depart" ? (gareDepart?.id ?? "") : (gareArrivee?.id ?? "")}
+        onSelect={(g) => {
+          if (gareTarget === "depart") setGareDepart(g);
+          else setGareArrivee(g);
+        }}
+        onClose={() => setGareTarget(null)}
       />
     </KeyboardAvoidingView>
   );
 }
 
 // ─── Étape 1 : Véhicule ───────────────────────────────────────────────────────
+
+const TYPE_ICON: Record<TypeVehicule, string> = {
+  BERLINE: "🚗",
+  SUV: "🚙",
+  MINIBUS: "🚐",
+  BUS: "🚌",
+  MOTO: "🏍️",
+};
 
 function StepVehicule({
   vehicules,
@@ -555,196 +621,432 @@ function StepVehicule({
     <View style={stepStyles.container}>
       <Text style={stepStyles.hint}>Quel véhicule utilisez-vous pour ce trajet ?</Text>
       <View style={stepStyles.vehiculeList}>
-        {vehicules.map((v) => (
-          <Pressable
-            key={v.id}
-            style={[stepStyles.vehiculeCard, selected === v.id && stepStyles.vehiculeCardActive]}
-            onPress={() => onSelect(v.id)}
-          >
-            <View style={stepStyles.vehiculeIconBox}>
-              <Text style={stepStyles.vehiculeIcon}>🚗</Text>
-            </View>
-            <View style={stepStyles.vehiculeInfo}>
-              <Text style={stepStyles.vehiculeName}>
-                {v.marque} {v.modele}
-              </Text>
-              <Text style={stepStyles.vehiculeSub}>
-                {TYPE_LABEL[v.type_vehicule as TypeVehicule]} · {v.couleur} · {v.annee}
-              </Text>
-              <Text style={stepStyles.vehiculePlate}>{v.immatriculation}</Text>
-            </View>
-            <View style={[stepStyles.vehiculeRadio, selected === v.id && stepStyles.vehiculeRadioActive]}>
-              {selected === v.id && <View style={stepStyles.vehiculeRadioDot} />}
-            </View>
-          </Pressable>
-        ))}
+        {vehicules.map((v) => {
+          const isSelected = selected === v.id;
+          const photoUri = resolveMediaUrl(v.photo_url);
+          return (
+            <Pressable
+              key={v.id}
+              style={[vehStyles.card, isSelected && vehStyles.cardActive]}
+              onPress={() => onSelect(v.id)}
+            >
+              {/* Bannière photo */}
+              <View style={vehStyles.banner}>
+                {photoUri ? (
+                  <Image source={{ uri: photoUri }} style={vehStyles.bannerImg} resizeMode="cover" />
+                ) : (
+                  <View style={vehStyles.bannerFallback}>
+                    <Text style={vehStyles.bannerEmoji}>
+                      {TYPE_ICON[v.type_vehicule as TypeVehicule]}
+                    </Text>
+                  </View>
+                )}
+                {/* Badge sélectionné */}
+                {isSelected && (
+                  <View style={vehStyles.selectedBadge}>
+                    <Text style={vehStyles.selectedBadgeText}>✓</Text>
+                  </View>
+                )}
+                {/* Plaque en overlay */}
+                <View style={vehStyles.plateOverlay}>
+                  <Text style={vehStyles.plateOverlayText}>{v.immatriculation}</Text>
+                </View>
+              </View>
+
+              {/* Infos */}
+              <View style={vehStyles.body}>
+                <View style={vehStyles.titleRow}>
+                  <Text style={[vehStyles.name, isSelected && vehStyles.nameActive]}>
+                    {v.marque} {v.modele}
+                  </Text>
+                  <Text style={vehStyles.year}>{v.annee}</Text>
+                </View>
+                <View style={vehStyles.tagsRow}>
+                  <View style={[vehStyles.tag, isSelected && vehStyles.tagActive]}>
+                    <Text style={[vehStyles.tagText, isSelected && vehStyles.tagTextActive]}>
+                      {TYPE_LABEL[v.type_vehicule as TypeVehicule]}
+                    </Text>
+                  </View>
+                  <View style={[vehStyles.tag, isSelected && vehStyles.tagActive]}>
+                    <Text style={[vehStyles.tagText, isSelected && vehStyles.tagTextActive]}>
+                      💺 {v.nombre_places} places
+                    </Text>
+                  </View>
+                  {v.climatise && (
+                    <View style={[vehStyles.tag, isSelected && vehStyles.tagActive]}>
+                      <Text style={[vehStyles.tagText, isSelected && vehStyles.tagTextActive]}>❄ Clim</Text>
+                    </View>
+                  )}
+                  <View style={[vehStyles.tag, isSelected && vehStyles.tagActive]}>
+                    <Text style={[vehStyles.tagText, isSelected && vehStyles.tagTextActive]}>{v.couleur}</Text>
+                  </View>
+                </View>
+              </View>
+            </Pressable>
+          );
+        })}
       </View>
     </View>
   );
 }
 
+const vehStyles = StyleSheet.create({
+  card: {
+    backgroundColor: colors.white,
+    borderRadius: radii.xl,
+    borderWidth: 2,
+    borderColor: colors.border,
+    overflow: "hidden",
+    ...shadows.sm,
+  },
+  cardActive: {
+    borderColor: colors.primary,
+    ...shadows.md,
+  },
+  banner: {
+    height: 140,
+    backgroundColor: colors.surface,
+    position: "relative",
+  },
+  bannerImg: {
+    width: "100%",
+    height: "100%",
+  },
+  bannerFallback: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: `${colors.primary}10`,
+  },
+  bannerEmoji: {
+    fontSize: 56,
+  },
+  selectedBadge: {
+    position: "absolute",
+    top: spacing.md,
+    right: spacing.md,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+    ...shadows.md,
+  },
+  selectedBadgeText: {
+    fontSize: 16,
+    color: colors.white,
+    fontFamily: typography.fontFamily.bold,
+  },
+  plateOverlay: {
+    position: "absolute",
+    bottom: spacing.sm,
+    left: spacing.md,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: radii.sm,
+  },
+  plateOverlayText: {
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamily.bold,
+    color: colors.white,
+    letterSpacing: 1.5,
+  },
+  body: {
+    padding: spacing.lg,
+    gap: spacing.sm,
+  },
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  name: {
+    fontSize: typography.fontSize.lg,
+    fontFamily: typography.fontFamily.bold,
+    color: colors.textPrimary,
+  },
+  nameActive: { color: colors.primary },
+  year: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.medium,
+    color: colors.textMuted,
+  },
+  tagsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.xs,
+  },
+  tag: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+    borderRadius: radii.full,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  tagActive: {
+    backgroundColor: `${colors.primary}12`,
+    borderColor: `${colors.primary}40`,
+  },
+  tagText: {
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamily.medium,
+    color: colors.textSecondary,
+  },
+  tagTextActive: { color: colors.primary },
+});
+
 // ─── Étape 2 : Itinéraire ─────────────────────────────────────────────────────
 
 function StepItineraire({
-  villeDepart,
-  villeArrivee,
-  pointDepart,
-  pointArrivee,
-  onOpenCity,
-  onChangePointDepart,
-  onChangePointArrivee,
+  villeDepart, villeArrivee, gareDepart, gareArrivee, onOpenCity, onOpenGare,
 }: {
-  villeDepart: string;
-  villeArrivee: string;
-  pointDepart: string;
-  pointArrivee: string;
+  villeDepart: string; villeArrivee: string;
+  gareDepart: GareRead | null; gareArrivee: GareRead | null;
   onOpenCity: (t: "depart" | "arrivee") => void;
-  onChangePointDepart: (v: string) => void;
-  onChangePointArrivee: (v: string) => void;
+  onOpenGare: (t: "depart" | "arrivee") => void;
 }) {
-  const sameCity = !!villeDepart && !!villeArrivee && villeDepart === villeArrivee;
+  const sameGare = !!(gareDepart && gareArrivee && gareDepart.id === gareArrivee.id);
 
   return (
     <View style={stepStyles.container}>
       <Text style={stepStyles.hint}>D'où partez-vous et où allez-vous ?</Text>
 
-      {/* Carte itinéraire visuelle */}
       <View style={itinStyles.card}>
-        {/* Départ */}
-        <View style={itinStyles.row}>
-          <View style={itinStyles.dotCol}>
-            <View style={[itinStyles.dot, { backgroundColor: colors.primary }]} />
+
+        {/* ── Départ ── */}
+        <View style={itinStyles.section}>
+          <View style={itinStyles.rail}>
+            <View style={itinStyles.dotDepart} />
+            <View style={itinStyles.line} />
           </View>
           <View style={itinStyles.fields}>
+            <Text style={itinStyles.sectionLabel}>DÉPART</Text>
             <Pressable
-              style={[itinStyles.cityBtn, villeDepart && itinStyles.cityBtnFilled]}
+              style={[itinStyles.cityBtn, !!villeDepart && itinStyles.cityBtnFilled]}
               onPress={() => onOpenCity("depart")}
             >
-              <Text style={[itinStyles.cityBtnTxt, !villeDepart && itinStyles.placeholder]}>
-                {villeDepart || "Ville de départ"}
+              <Text style={[itinStyles.cityName, !villeDepart && itinStyles.cityPlaceholder]}>
+                {villeDepart || "Choisir la ville"}
               </Text>
-              <Text style={itinStyles.arrow}>▼</Text>
+              <Text style={itinStyles.chevron}>▼</Text>
             </Pressable>
-            <TextInput
-              style={itinStyles.pointInput}
-              value={pointDepart}
-              onChangeText={onChangePointDepart}
-              placeholder="Point de départ précis (min. 5 car.)"
-              placeholderTextColor={colors.textMuted}
-              returnKeyType="next"
-            />
+            <Pressable
+              style={[itinStyles.gareBtn, !!gareDepart && itinStyles.gareBtnFilled, !villeDepart && itinStyles.gareBtnDisabled]}
+              onPress={() => villeDepart && onOpenGare("depart")}
+              disabled={!villeDepart}
+            >
+              <Text style={[itinStyles.gareName, !gareDepart && itinStyles.garePlaceholder]}>
+                {gareDepart ? gareDepart.nom : "Choisir la gare de départ"}
+              </Text>
+              <Text style={itinStyles.chevron}>▼</Text>
+            </Pressable>
           </View>
         </View>
 
-        {/* Connecteur */}
-        <View style={itinStyles.connector}>
-          <View style={itinStyles.connectorLine} />
-          <View style={itinStyles.connectorArrow}>
-            <Text style={itinStyles.connectorArrowTxt}>↓</Text>
+        {/* ── Séparateur central ── */}
+        <View style={itinStyles.midRow}>
+          <View style={itinStyles.railMid}>
+            <View style={itinStyles.lineMid} />
           </View>
-          <View style={itinStyles.connectorLine} />
+          <View style={itinStyles.distancePill}>
+            <Text style={itinStyles.distancePillTxt}>🚗  trajet</Text>
+          </View>
         </View>
 
-        {/* Arrivée */}
-        <View style={itinStyles.row}>
-          <View style={itinStyles.dotCol}>
-            <View style={[itinStyles.dot, { backgroundColor: colors.error }]} />
+        {/* ── Arrivée ── */}
+        <View style={itinStyles.section}>
+          <View style={itinStyles.rail}>
+            <View style={[itinStyles.dotArrivee, sameGare && itinStyles.dotError]} />
           </View>
           <View style={itinStyles.fields}>
+            <Text style={itinStyles.sectionLabel}>ARRIVÉE</Text>
             <Pressable
-              style={[itinStyles.cityBtn, villeArrivee && itinStyles.cityBtnFilled, sameCity && itinStyles.cityBtnError]}
+              style={[itinStyles.cityBtn, !!villeArrivee && itinStyles.cityBtnFilled]}
               onPress={() => onOpenCity("arrivee")}
             >
-              <Text style={[itinStyles.cityBtnTxt, !villeArrivee && itinStyles.placeholder, sameCity && itinStyles.txtError]}>
-                {villeArrivee || "Ville d'arrivée"}
+              <Text style={[itinStyles.cityName, !villeArrivee && itinStyles.cityPlaceholder]}>
+                {villeArrivee || "Choisir la ville"}
               </Text>
-              <Text style={itinStyles.arrow}>▼</Text>
+              <Text style={itinStyles.chevron}>▼</Text>
             </Pressable>
-            <TextInput
-              style={itinStyles.pointInput}
-              value={pointArrivee}
-              onChangeText={onChangePointArrivee}
-              placeholder="Point d'arrivée précis (min. 5 car.)"
-              placeholderTextColor={colors.textMuted}
-              returnKeyType="done"
-            />
+            <Pressable
+              style={[itinStyles.gareBtn, !!gareArrivee && itinStyles.gareBtnFilled, !villeArrivee && itinStyles.gareBtnDisabled]}
+              onPress={() => villeArrivee && onOpenGare("arrivee")}
+              disabled={!villeArrivee}
+            >
+              <Text style={[itinStyles.gareName, !gareArrivee && itinStyles.garePlaceholder]}>
+                {gareArrivee ? gareArrivee.nom : "Choisir la gare d'arrivée"}
+              </Text>
+              <Text style={itinStyles.chevron}>▼</Text>
+            </Pressable>
           </View>
         </View>
+
       </View>
 
-      {sameCity && (
-        <Text style={stepStyles.errorNote}>Les villes de départ et d'arrivée doivent être différentes.</Text>
+      {sameGare && (
+        <Text style={stepStyles.errorNote}>
+          La gare de départ et d'arrivée doivent être différentes.
+        </Text>
       )}
     </View>
   );
 }
 
+const RAIL_W = 36;
+
 const itinStyles = StyleSheet.create({
   card: {
     backgroundColor: colors.white,
     borderRadius: radii.xl,
-    padding: spacing.xl,
-    gap: 0,
+    paddingVertical: spacing.xl,
+    paddingRight: spacing.xl,
     ...shadows.sm,
   },
-  row: { flexDirection: "row", alignItems: "flex-start", gap: spacing.md },
-  dotCol: { width: 20, alignItems: "center", paddingTop: 14 },
-  dot: { width: 12, height: 12, borderRadius: 6 },
-  fields: { flex: 1, gap: spacing.sm },
+  section: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+  },
+  // ── Rail vertical (tiret + point) ──
+  rail: {
+    width: RAIL_W,
+    alignItems: "center",
+    paddingTop: 26,
+  },
+  railMid: {
+    width: RAIL_W,
+    alignItems: "center",
+    paddingTop: 0,
+  },
+  dotDepart: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: colors.primary,
+    zIndex: 1,
+  },
+  dotArrivee: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: colors.error,
+    borderWidth: 2,
+    borderColor: colors.error,
+    zIndex: 1,
+  },
+  dotError: { backgroundColor: colors.error },
+  line: {
+    width: 2,
+    flex: 1,
+    backgroundColor: colors.border,
+    marginTop: 4,
+  },
+  lineMid: {
+    width: 2,
+    height: 36,
+    backgroundColor: colors.border,
+  },
+  // ── Champs ──
+  fields: {
+    flex: 1,
+    gap: spacing.sm,
+    paddingBottom: spacing.lg,
+  },
+  sectionLabel: {
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamily.bold,
+    color: colors.textMuted,
+    letterSpacing: 1.2,
+    marginBottom: -2,
+  },
   cityBtn: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     borderWidth: 1.5,
     borderColor: colors.border,
-    borderRadius: radii.md,
+    borderRadius: radii.lg,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
     backgroundColor: colors.surface,
   },
-  cityBtnFilled: { borderColor: colors.primary, backgroundColor: `${colors.primary}08` },
-  cityBtnError: { borderColor: colors.error, backgroundColor: colors.errorBg },
-  cityBtnTxt: {
+  cityBtnFilled: {
+    borderColor: colors.primary,
+    backgroundColor: `${colors.primary}08`,
+  },
+  cityBtnError: {
+    borderColor: colors.error,
+    backgroundColor: colors.errorBg,
+  },
+  cityName: {
+    fontSize: typography.fontSize.lg,
+    fontFamily: typography.fontFamily.bold,
+    color: colors.textPrimary,
+  },
+  cityPlaceholder: {
     fontSize: typography.fontSize.base,
-    fontFamily: typography.fontFamily.semiBold,
-    color: colors.textPrimary,
-  },
-  placeholder: { color: colors.textMuted, fontFamily: typography.fontFamily.regular },
-  txtError: { color: colors.error },
-  arrow: { fontSize: typography.fontSize.xs, color: colors.textMuted },
-  pointInput: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radii.md,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    fontSize: typography.fontSize.sm,
     fontFamily: typography.fontFamily.regular,
-    color: colors.textPrimary,
-    backgroundColor: colors.white,
+    color: colors.textMuted,
   },
-  connector: {
+  cityError: { color: colors.error },
+  chevron: {
+    fontSize: 10,
+    color: colors.textMuted,
+  },
+  gareBtn: {
     flexDirection: "row",
     alignItems: "center",
-    paddingLeft: 28,
-    paddingVertical: spacing.sm,
-    gap: spacing.xs,
-  },
-  connectorLine: { flex: 1, height: 1, backgroundColor: colors.border },
-  connectorArrow: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: colors.surface,
-    alignItems: "center",
-    justifyContent: "center",
+    justifyContent: "space-between",
     borderWidth: 1,
     borderColor: colors.border,
+    borderRadius: radii.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    backgroundColor: colors.white,
   },
-  connectorArrowTxt: {
+  gareBtnFilled: {
+    borderColor: `${colors.primary}60`,
+    backgroundColor: `${colors.primary}06`,
+  },
+  gareBtnDisabled: {
+    opacity: 0.4,
+  },
+  gareName: {
     fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.semiBold,
+    color: colors.textPrimary,
+    flex: 1,
+  },
+  garePlaceholder: {
+    fontFamily: typography.fontFamily.regular,
     color: colors.textMuted,
-    fontFamily: typography.fontFamily.bold,
+  },
+  // ── Séparateur central ──
+  midRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginVertical: -spacing.xs,
+  },
+  distancePill: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderRadius: radii.full,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    alignSelf: "center",
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginRight: spacing.xl,
+  },
+  distancePillTxt: {
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamily.medium,
+    color: colors.textMuted,
   },
 });
 
@@ -988,61 +1290,137 @@ function StepTarif({
   places,
   onPrix,
   onPlaces,
+  villeDepart,
+  villeArrivee,
+  prixMax,
+  prixReco,
+  tarifLoading,
+  vehiculeCapacity,
 }: {
   prix: string;
   places: number;
   onPrix: (v: string) => void;
-  onPlaces: (fn: (p: number) => number) => void;
+  onPlaces: (v: number) => void;
+  villeDepart: string;
+  villeArrivee: string;
+  prixMax: number | null;
+  prixReco: number | null;
+  tarifLoading: boolean;
+  vehiculeCapacity: number;
 }) {
-  const prixNum = Number(prix);
-  const prixInvalid = !!prix && (!isNaN(prixNum) ? prixNum < 500 : true);
+  const [overCapacityModal, setOverCapacityModal] = useState(false);
+
+  const selectedPlan: "reco" | "max" | null =
+    prixReco !== null && Number(prix) === prixReco
+      ? "reco"
+      : prixMax !== null && Number(prix) === prixMax
+      ? "max"
+      : null;
+
+  const handlePlacesIncrement = () => {
+    if (places >= vehiculeCapacity) {
+      setOverCapacityModal(true);
+    } else {
+      onPlaces(places + 1);
+    }
+  };
 
   return (
-    <View style={stepStyles.container}>
-      <Text style={stepStyles.hint}>Combien coûte une place et combien en proposez-vous ?</Text>
+    <ScrollView
+      style={{ flex: 1 }}
+      contentContainerStyle={{ gap: spacing.xl, paddingBottom: spacing["2xl"] }}
+      showsVerticalScrollIndicator={false}
+    >
+      <Text style={stepStyles.hint}>
+        Sélectionnez le tarif pour ce trajet.
+      </Text>
 
-      {/* Prix */}
-      <View style={tarifStyles.block}>
-        <View style={tarifStyles.blockHeader}>
-          <Text style={tarifStyles.blockIcon}>💰</Text>
-          <Text style={tarifStyles.blockTitle}>Prix par place</Text>
-        </View>
-        <View style={tarifStyles.prixRow}>
-          <TextInput
-            style={[tarifStyles.prixInput, prixInvalid && tarifStyles.prixInputError]}
-            value={prix}
-            onChangeText={onPrix}
-            placeholder="5 000"
-            placeholderTextColor={colors.textMuted}
-            keyboardType="numeric"
-            autoFocus
-          />
-          <View style={tarifStyles.prixUnit}>
-            <Text style={tarifStyles.prixUnitTxt}>FCFA</Text>
+      {/* ── Sélection du tarif ── */}
+      {tarifLoading ? (
+        <ActivityIndicator color={colors.primary} />
+      ) : prixReco !== null ? (
+        <View style={tarifStyles.adminCard}>
+          <View style={tarifStyles.adminCardHeader}>
+            <Text style={tarifStyles.adminCardIcon}>📋</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={tarifStyles.adminCardTitle}>Tarifs officiels GoTaxi</Text>
+              <Text style={tarifStyles.adminCardRoute}>{villeDepart} → {villeArrivee}</Text>
+            </View>
           </View>
-        </View>
-        {prixInvalid && (
-          <Text style={stepStyles.errorNote}>
-            {isNaN(prixNum) ? "Entrez un nombre valide." : "Le prix minimum est 500 FCFA."}
-          </Text>
-        )}
-        {prix && !prixInvalid && (
-          <Text style={tarifStyles.prixOk}>
-            Revenu estimé : {(prixNum * places).toLocaleString("fr-FR")} FCFA
-          </Text>
-        )}
-      </View>
 
-      {/* Places */}
+          {/* Prix de base */}
+          <Pressable
+            style={[tarifStyles.planRow, selectedPlan === "reco" && tarifStyles.planRowSelected]}
+            onPress={() => onPrix(String(prixReco))}
+          >
+            <View style={[tarifStyles.planRadio, selectedPlan === "reco" && tarifStyles.planRadioSelected]}>
+              {selectedPlan === "reco" && <View style={tarifStyles.planRadioDot} />}
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[tarifStyles.planName, selectedPlan === "reco" && tarifStyles.planNameSelected]}>
+                Prix de base
+              </Text>
+              <Text style={tarifStyles.planDesc}>Tarif recommandé par GoTaxi</Text>
+            </View>
+            <Text style={[tarifStyles.planPrice, selectedPlan === "reco" && tarifStyles.planPriceSelected]}>
+              {prixReco.toLocaleString("fr-FR")} FCFA
+            </Text>
+          </Pressable>
+
+          {/* Plafond maximum — seulement si différent du prix de base */}
+          {prixMax !== null && prixMax !== prixReco && (
+            <Pressable
+              style={[tarifStyles.planRow, tarifStyles.planRowMax, selectedPlan === "max" && tarifStyles.planRowMaxSelected]}
+              onPress={() => onPrix(String(prixMax))}
+            >
+              <View style={[tarifStyles.planRadio, tarifStyles.planRadioMax, selectedPlan === "max" && tarifStyles.planRadioMaxSelected]}>
+                {selectedPlan === "max" && <View style={[tarifStyles.planRadioDot, tarifStyles.planRadioDotMax]} />}
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[tarifStyles.planName, selectedPlan === "max" && tarifStyles.planNameMax]}>
+                  Plafond maximum
+                </Text>
+                <Text style={tarifStyles.planDesc}>Prix réglementaire le plus élevé autorisé</Text>
+              </View>
+              <Text style={[tarifStyles.planPrice, selectedPlan === "max" && tarifStyles.planPriceMax]}>
+                {prixMax.toLocaleString("fr-FR")} FCFA
+              </Text>
+            </Pressable>
+          )}
+        </View>
+      ) : (
+        <View style={tarifStyles.noTarifCard}>
+          <Text style={tarifStyles.noTarifIcon}>ℹ️</Text>
+          <Text style={tarifStyles.noTarifText}>
+            Aucun tarif officiel défini pour ce trajet.{"\n"}Contactez l'administration GoTaxi.
+          </Text>
+        </View>
+      )}
+
+      {/* ── Prix sélectionné (résumé) ── */}
+      {prix ? (
+        <View style={tarifStyles.prixSelectedCard}>
+          <Text style={tarifStyles.prixSelectedLabel}>Prix par place sélectionné</Text>
+          <Text style={tarifStyles.prixSelectedValue}>{Number(prix).toLocaleString("fr-FR")} FCFA</Text>
+          <Text style={tarifStyles.prixEstimate}>
+            Revenu estimé : {(Number(prix) * places).toLocaleString("fr-FR")} FCFA
+          </Text>
+        </View>
+      ) : null}
+
+      {/* ── Nombre de places ── */}
       <View style={tarifStyles.block}>
         <View style={tarifStyles.blockHeader}>
           <Text style={tarifStyles.blockIcon}>💺</Text>
           <Text style={tarifStyles.blockTitle}>Nombre de places passager</Text>
         </View>
+        <Text style={tarifStyles.capacityHint}>
+          Capacité de votre véhicule : {vehiculeCapacity} place{vehiculeCapacity > 1 ? "s" : ""}
+        </Text>
         <View style={tarifStyles.counter}>
           <Pressable
             style={[tarifStyles.counterBtn, places <= 1 && tarifStyles.counterBtnDisabled]}
-            onPress={() => onPlaces((p) => Math.max(1, p - 1))}
+            onPress={() => onPlaces(Math.max(1, places - 1))}
             disabled={places <= 1}
           >
             <Text style={tarifStyles.counterBtnTxt}>−</Text>
@@ -1051,16 +1429,32 @@ function StepTarif({
             <Text style={tarifStyles.counterValue}>{places}</Text>
             <Text style={tarifStyles.counterLabel}>place{places > 1 ? "s" : ""}</Text>
           </View>
-          <Pressable
-            style={[tarifStyles.counterBtn, places >= 8 && tarifStyles.counterBtnDisabled]}
-            onPress={() => onPlaces((p) => Math.min(8, p + 1))}
-            disabled={places >= 8}
-          >
+          <Pressable style={tarifStyles.counterBtn} onPress={handlePlacesIncrement}>
             <Text style={tarifStyles.counterBtnTxt}>+</Text>
           </Pressable>
         </View>
       </View>
-    </View>
+
+      {/* ── Modal : capacité véhicule dépassée ── */}
+      <Modal visible={overCapacityModal} transparent animationType="fade" onRequestClose={() => setOverCapacityModal(false)}>
+        <View style={alertStyles.overlay}>
+          <View style={alertStyles.card}>
+            <Text style={alertStyles.alertIcon}>💺</Text>
+            <Text style={alertStyles.alertTitle}>Capacité du véhicule</Text>
+            <Text style={alertStyles.alertMessage}>
+              Votre véhicule dispose de{" "}
+              <Text style={alertStyles.alertHighlight}>{vehiculeCapacity} place{vehiculeCapacity > 1 ? "s" : ""}</Text>{" "}
+              au maximum. Vous ne pouvez pas proposer plus de places que votre véhicule n'en contient.
+            </Text>
+            <View style={alertStyles.btnRow}>
+              <Pressable style={alertStyles.btnPrimary} onPress={() => setOverCapacityModal(false)}>
+                <Text style={alertStyles.btnPrimaryTxt}>Compris</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </ScrollView>
   );
 }
 
@@ -1079,42 +1473,171 @@ const tarifStyles = StyleSheet.create({
     fontFamily: typography.fontFamily.bold,
     color: colors.textPrimary,
   },
-  prixRow: { flexDirection: "row", alignItems: "stretch", gap: 0 },
-  prixInput: {
-    flex: 1,
-    borderWidth: 1.5,
-    borderColor: colors.border,
-    borderTopLeftRadius: radii.lg,
-    borderBottomLeftRadius: radii.lg,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    fontSize: typography.fontSize["3xl"],
-    fontFamily: typography.fontFamily.extraBold,
-    color: colors.textPrimary,
+  // Admin tarif card
+  adminCard: {
     backgroundColor: colors.white,
-    textAlign: "right",
+    borderRadius: radii.xl,
+    padding: spacing.xl,
+    gap: spacing.md,
+    borderWidth: 1.5,
+    borderColor: `${colors.primary}40`,
+    ...shadows.sm,
   },
-  prixInputError: { borderColor: colors.error },
-  prixUnit: {
-    paddingHorizontal: spacing.lg,
-    backgroundColor: colors.surface,
+  adminCardHeader: { flexDirection: "row", alignItems: "flex-start", gap: spacing.md },
+  adminCardIcon: { fontSize: 22, marginTop: 2 },
+  adminCardTitle: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.bold,
+    color: colors.textPrimary,
+  },
+  adminCardRoute: {
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamily.medium,
+    color: colors.textMuted,
+    marginTop: 2,
+  },
+  adminPriceRow: { flexDirection: "row", gap: spacing.md },
+  adminPricePill: {
+    flex: 1,
+    backgroundColor: `${colors.primary}0E`,
+    borderRadius: radii.lg,
+    padding: spacing.md,
+    alignItems: "center",
+    gap: 2,
+    borderWidth: 1,
+    borderColor: `${colors.primary}30`,
+  },
+  adminPricePillMax: {
+    backgroundColor: colors.warningBg,
+    borderColor: `${colors.warning}50`,
+  },
+  adminPricePillLabel: {
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamily.medium,
+    color: colors.textMuted,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  adminPricePillValue: {
+    fontSize: typography.fontSize.base,
+    fontFamily: typography.fontFamily.extraBold,
+    color: colors.primary,
+  },
+  adminPricePillValueMax: { color: colors.warningText },
+  // Plan rows (liste radio)
+  planRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    borderRadius: radii.lg,
     borderWidth: 1.5,
     borderColor: colors.border,
-    borderLeftWidth: 0,
-    borderTopRightRadius: radii.lg,
-    borderBottomRightRadius: radii.lg,
+    backgroundColor: colors.surface,
+  },
+  planRowSelected: {
+    backgroundColor: `${colors.primary}0D`,
+    borderColor: colors.primary,
+  },
+  planRowMax: {
+    borderColor: colors.border,
+  },
+  planRowMaxSelected: {
+    backgroundColor: colors.warningBg,
+    borderColor: colors.warning,
+  },
+  // Radio button
+  planRadio: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: colors.border,
     alignItems: "center",
     justifyContent: "center",
   },
-  prixUnitTxt: {
-    fontSize: typography.fontSize.base,
-    fontFamily: typography.fontFamily.bold,
-    color: colors.textSecondary,
+  planRadioSelected: { borderColor: colors.primary },
+  planRadioMax: { borderColor: colors.border },
+  planRadioMaxSelected: { borderColor: colors.warning },
+  planRadioDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: colors.primary,
   },
-  prixOk: {
+  planRadioDotMax: { backgroundColor: colors.warning },
+  // Textes plan
+  planName: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.bold,
+    color: colors.textPrimary,
+  },
+  planNameSelected: { color: colors.primary },
+  planNameMax: { color: colors.warningText },
+  planDesc: {
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamily.regular,
+    color: colors.textMuted,
+    marginTop: 1,
+  },
+  planPrice: {
+    fontSize: typography.fontSize.base,
+    fontFamily: typography.fontFamily.extraBold,
+    color: colors.textPrimary,
+  },
+  planPriceSelected: { color: colors.primary },
+  planPriceMax: { color: colors.warningText },
+  // Résumé prix sélectionné
+  prixSelectedCard: {
+    backgroundColor: `${colors.primary}0D`,
+    borderRadius: radii.xl,
+    padding: spacing.xl,
+    alignItems: "center",
+    gap: spacing.xs,
+    borderWidth: 1.5,
+    borderColor: `${colors.primary}30`,
+  },
+  prixSelectedLabel: {
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamily.semiBold,
+    color: colors.primary,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+  },
+  prixSelectedValue: {
+    fontSize: typography.fontSize["3xl"],
+    fontFamily: typography.fontFamily.extraBold,
+    color: colors.primary,
+  },
+  prixEstimate: {
     fontSize: typography.fontSize.sm,
     fontFamily: typography.fontFamily.medium,
-    color: colors.success,
+    color: colors.textSecondary,
+  },
+  // Aucun tarif
+  noTarifCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radii.xl,
+    padding: spacing.xl,
+    alignItems: "center",
+    gap: spacing.md,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+  },
+  noTarifIcon: { fontSize: 28 },
+  noTarifText: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.medium,
+    color: colors.textSecondary,
+    textAlign: "center",
+    lineHeight: 20,
+  },
+  // Compteur places
+  capacityHint: {
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamily.medium,
+    color: colors.textMuted,
   },
   counter: {
     flexDirection: "row",
@@ -1150,6 +1673,74 @@ const tarifStyles = StyleSheet.create({
     fontSize: typography.fontSize.sm,
     fontFamily: typography.fontFamily.medium,
     color: colors.textMuted,
+  },
+});
+
+const alertStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: spacing["2xl"],
+  },
+  card: {
+    backgroundColor: colors.white,
+    borderRadius: radii["2xl"],
+    padding: spacing["2xl"],
+    width: "100%",
+    alignItems: "center",
+    gap: spacing.lg,
+    ...shadows.lg,
+  },
+  alertIcon: { fontSize: 40 },
+  alertTitle: {
+    fontSize: typography.fontSize.xl,
+    fontFamily: typography.fontFamily.bold,
+    color: colors.textPrimary,
+    textAlign: "center",
+  },
+  alertMessage: {
+    fontSize: typography.fontSize.base,
+    fontFamily: typography.fontFamily.regular,
+    color: colors.textSecondary,
+    textAlign: "center",
+    lineHeight: 22,
+  },
+  alertHighlight: {
+    fontFamily: typography.fontFamily.bold,
+    color: colors.error,
+  },
+  btnRow: {
+    flexDirection: "row",
+    gap: spacing.md,
+    width: "100%",
+  },
+  btnSecondary: {
+    flex: 1,
+    paddingVertical: spacing.lg,
+    borderRadius: radii.xl,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    alignItems: "center",
+  },
+  btnSecondaryTxt: {
+    fontSize: typography.fontSize.base,
+    fontFamily: typography.fontFamily.semiBold,
+    color: colors.textSecondary,
+  },
+  btnPrimary: {
+    flex: 1,
+    paddingVertical: spacing.lg,
+    borderRadius: radii.xl,
+    backgroundColor: colors.primary,
+    alignItems: "center",
+  },
+  btnPrimaryTxt: {
+    fontSize: typography.fontSize.base,
+    fontFamily: typography.fontFamily.bold,
+    color: colors.white,
+    textAlign: "center",
   },
 });
 
@@ -1284,66 +1875,13 @@ const optStyles = StyleSheet.create({
 
 const stepStyles = StyleSheet.create({
   container: { flex: 1, gap: spacing.xl },
+  scrollContent: { gap: spacing.xl, paddingBottom: spacing["2xl"] },
   hint: {
     fontSize: typography.fontSize.base,
     fontFamily: typography.fontFamily.regular,
     color: colors.textSecondary,
   },
-  vehiculeList: { gap: spacing.md },
-  vehiculeCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
-    backgroundColor: colors.white,
-    borderRadius: radii.xl,
-    padding: spacing.xl,
-    borderWidth: 2,
-    borderColor: colors.border,
-    ...shadows.sm,
-  },
-  vehiculeCardActive: { borderColor: colors.primary, backgroundColor: `${colors.primary}06` },
-  vehiculeIconBox: {
-    width: 48,
-    height: 48,
-    borderRadius: radii.lg,
-    backgroundColor: colors.surface,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  vehiculeIcon: { fontSize: 24 },
-  vehiculeInfo: { flex: 1, gap: 2 },
-  vehiculeName: {
-    fontSize: typography.fontSize.base,
-    fontFamily: typography.fontFamily.bold,
-    color: colors.textPrimary,
-  },
-  vehiculeSub: {
-    fontSize: typography.fontSize.sm,
-    fontFamily: typography.fontFamily.regular,
-    color: colors.textSecondary,
-  },
-  vehiculePlate: {
-    fontSize: typography.fontSize.xs,
-    fontFamily: typography.fontFamily.medium,
-    color: colors.textMuted,
-    letterSpacing: 1,
-  },
-  vehiculeRadio: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    borderWidth: 2,
-    borderColor: colors.border,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  vehiculeRadioActive: { borderColor: colors.primary },
-  vehiculeRadioDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: colors.primary,
-  },
+  vehiculeList: { gap: spacing.lg },
   errorNote: {
     fontSize: typography.fontSize.sm,
     fontFamily: typography.fontFamily.medium,
@@ -1443,7 +1981,6 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     paddingHorizontal: spacing["2xl"],
     paddingTop: spacing.lg,
-    paddingBottom: Platform.OS === "ios" ? 36 : spacing["2xl"],
     backgroundColor: colors.white,
     borderTopWidth: 1,
     borderTopColor: colors.border,

@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Platform,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useWithdraw, useWallet } from "@/src/hooks/useWallet";
@@ -43,9 +44,26 @@ const OPERATEURS: { id: OperateurMM; label: string; logo: string; color: string;
     bg: "#E8F9FF",
     hint: "Traitement manuel — sous 24h",
   },
+  {
+    id: "CELTIS",
+    label: "Celtis",
+    logo: "🔵",
+    color: colors.celtisBlue,
+    bg: "#E6F6FD",
+    hint: "Virement automatique — mode test",
+  },
+  {
+    id: "FEDAPAY",
+    label: "FedaPay",
+    logo: "💳",
+    color: colors.fedapayPurple,
+    bg: "#F3EEFF",
+    hint: "Agrégateur — MTN, Moov, Orange",
+  },
 ];
 
 export default function RetraitScreen() {
+  const insets = useSafeAreaInsets();
   const { showToast } = useToast();
   const { data: wallet } = useWallet();
   const { mutateAsync: withdraw, isPending } = useWithdraw();
@@ -172,7 +190,7 @@ export default function RetraitScreen() {
         )}
 
         {/* Note délai */}
-        {operateur !== "MTN_MOMO" && (
+        {operateur !== "MTN_MOMO" && operateur !== "CELTIS" && operateur !== "FEDAPAY" && (
           <View style={styles.delayNote}>
             <Ionicons name="time-outline" size={16} color={colors.warningText} />
             <Text style={styles.delayNoteTxt}>

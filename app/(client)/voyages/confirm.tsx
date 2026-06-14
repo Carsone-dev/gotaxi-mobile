@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   Platform,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { router, useLocalSearchParams } from "expo-router";
 import { format } from "date-fns";
@@ -20,6 +21,7 @@ import { useToast } from "@/src/components/common/Toast";
 import { colors, typography, spacing, radii, shadows } from "@/src/theme";
 
 export default function ConfirmScreen() {
+  const insets = useSafeAreaInsets();
   const { voyage_id, places: placesParam } = useLocalSearchParams<{ voyage_id: string; places?: string }>();
   const { showToast } = useToast();
   const [places, setPlaces] = useState(() => Math.max(1, Number(placesParam) || 1));

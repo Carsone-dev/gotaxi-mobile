@@ -8,7 +8,9 @@ import {
   ActivityIndicator,
   RefreshControl,
   Alert,
+  Image,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
@@ -157,17 +159,38 @@ function ColisActionCard({
   return (
     <View style={[cardStyles.card, colis.statut === "EN_ATTENTE" && cardStyles.cardPending]}>
 
+      {/* Photo du colis (si disponible) */}
+      {colis.photo_url ? (
+        <View style={cardStyles.photoWrap}>
+          <Image
+            source={{ uri: colis.photo_url }}
+            style={cardStyles.photo}
+            resizeMode="cover"
+          />
+          <View style={cardStyles.photoBadge}>
+            <Text style={cardStyles.photoBadgeText}>{icon} {CATEGORIE_LABEL[cat]}</Text>
+          </View>
+          <View style={[cardStyles.photoStatut, { backgroundColor: cfg.bg }]}>
+            <Text style={[cardStyles.photoStatutText, { color: cfg.color }]}>
+              {cfg.icon}  {cfg.label}
+            </Text>
+          </View>
+        </View>
+      ) : null}
+
       {/* En-tête : code + statut */}
       <View style={cardStyles.topRow}>
         <View style={cardStyles.codeBlock}>
           <Text style={cardStyles.codeLabel}>CODE SUIVI</Text>
           <Text style={cardStyles.codeValue}>{colis.code_suivi}</Text>
         </View>
-        <View style={[cardStyles.pill, { backgroundColor: cfg.bg }]}>
-          <Text style={[cardStyles.pillText, { color: cfg.color }]}>
-            {cfg.icon}  {cfg.label}
-          </Text>
-        </View>
+        {!colis.photo_url && (
+          <View style={[cardStyles.pill, { backgroundColor: cfg.bg }]}>
+            <Text style={[cardStyles.pillText, { color: cfg.color }]}>
+              {cfg.icon}  {cfg.label}
+            </Text>
+          </View>
+        )}
       </View>
 
       {/* Destinataire */}
@@ -266,7 +289,7 @@ const cardStyles = StyleSheet.create({
     borderRadius: radii.xl,
     borderWidth: 1,
     borderColor: colors.border,
-    padding: spacing.xl,
+    overflow: "hidden",
     gap: spacing.md,
     ...shadows.sm,
   },
@@ -274,10 +297,52 @@ const cardStyles = StyleSheet.create({
     borderColor: colors.warning,
     borderLeftWidth: 4,
   },
+
+  // Photo
+  photoWrap: {
+    width: "100%",
+    height: 180,
+    position: "relative",
+  },
+  photo: {
+    width: "100%",
+    height: "100%",
+    backgroundColor: colors.surface,
+  },
+  photoBadge: {
+    position: "absolute",
+    bottom: spacing.sm,
+    left: spacing.sm,
+    backgroundColor: "rgba(0,0,0,0.58)",
+    borderRadius: radii.full,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 4,
+  },
+  photoBadgeText: {
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamily.semiBold,
+    color: colors.white,
+  },
+  photoStatut: {
+    position: "absolute",
+    top: spacing.sm,
+    right: spacing.sm,
+    borderRadius: radii.full,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+  },
+  photoStatutText: {
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamily.semiBold,
+  },
+
+  // Le reste du padding s'applique à partir du topRow
   topRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.xl,
   },
   codeBlock: { gap: 2 },
   codeLabel: {
@@ -308,6 +373,7 @@ const cardStyles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderRadius: radii.md,
     padding: spacing.md,
+    marginHorizontal: spacing.xl,
   },
   destIcon: { fontSize: 18 },
   destName: {
@@ -324,6 +390,7 @@ const cardStyles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: spacing.xs,
+    paddingHorizontal: spacing.xl,
   },
   catChip: {
     fontSize: typography.fontSize.sm,
@@ -358,6 +425,7 @@ const cardStyles = StyleSheet.create({
     color: colors.textSecondary,
     fontStyle: "italic",
     lineHeight: 18,
+    paddingHorizontal: spacing.xl,
   },
   prixRow: {
     flexDirection: "row",
@@ -365,6 +433,8 @@ const cardStyles = StyleSheet.create({
     borderRadius: radii.md,
     padding: spacing.md,
     alignItems: "center",
+    marginHorizontal: spacing.xl,
+    marginBottom: spacing.xl,
   },
   prixBlock: { flex: 1, alignItems: "center", gap: 2 },
   prixDivider: { width: 1, height: 32, backgroundColor: colors.border },
@@ -386,7 +456,7 @@ const cardStyles = StyleSheet.create({
     color: colors.textPrimary,
     textAlign: "center",
   },
-  actions: { flexDirection: "row", gap: spacing.sm },
+  actions: { flexDirection: "row", gap: spacing.sm, paddingHorizontal: spacing.xl, marginTop: -spacing.sm, marginBottom: spacing.xl },
   btn: {
     flex: 1, paddingVertical: spacing.md, borderRadius: radii.md,
     alignItems: "center", justifyContent: "center", minHeight: 42,
@@ -515,6 +585,7 @@ const sectionStyles = StyleSheet.create({
 // ─── Écran principal ──────────────────────────────────────────────────────────
 
 export default function ChauffeurColisScreen() {
+  const insets = useSafeAreaInsets();
   const [activeTab, setActiveTab] = useState<TabId>("valider");
 
   const {
@@ -531,7 +602,7 @@ export default function ChauffeurColisScreen() {
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
         <Text style={styles.title}>Mes Colis</Text>
         <Text style={styles.subtitle}>
           {voyagesAvecColis.length > 0

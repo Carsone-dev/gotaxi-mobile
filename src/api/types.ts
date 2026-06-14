@@ -93,8 +93,11 @@ export interface Chauffeur {
   id: string;
   user_id: string;
   cin_numero: string | null;
+  cin_url: string | null;
   permis_numero: string | null;
+  permis_url: string | null;
   permis_expiration: string | null;
+  casier_judiciaire_url: string | null;
   kyc_valide: boolean;
   kyc_valide_le: string | null;
   autorisation_transfrontaliere: boolean;
@@ -339,9 +342,22 @@ export interface ColisCreatePayload {
   modalite_paiement?: ColisModalitePaiement;
 }
 
+// ─── Tarifs trajets ───────────────────────────────────────────────────────────
+
+export interface TarifTrajet {
+  id: string;
+  ville_depart: string;
+  ville_arrivee: string;
+  prix_recommande: number;
+  prix_max: number;
+  actif: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 // ─── Wallet ───────────────────────────────────────────────────────────────────
 
-export type OperateurMM = "MTN_MOMO" | "ORANGE_MONEY" | "MOOV_MONEY";
+export type OperateurMM = "MTN_MOMO" | "ORANGE_MONEY" | "MOOV_MONEY" | "CELTIS" | "FEDAPAY";
 export type TransactionType =
   | "RECHARGE"
   | "PAIEMENT_VOYAGE"
@@ -381,6 +397,11 @@ export interface RechargeInitiatePayload {
   telephone: string;
 }
 
+export interface RechargeInitiateResult {
+  message: string;
+  payment_url?: string;
+}
+
 export interface WithdrawPayload {
   montant: number;
   telephone: string;
@@ -390,4 +411,29 @@ export interface WithdrawPayload {
 export interface TransferPayload {
   destinataire_telephone: string;
   montant: number;
+}
+
+export interface WalletPublic {
+  user_id: string;
+  nom: string;
+  prenom: string;
+  telephone: string;
+  actif: boolean;
+}
+
+// ─── Payout Account (chauffeur) ───────────────────────────────────────────────
+
+export type PayoutOperateur = "MTN_MOMO" | "ORANGE_MONEY" | "MOOV_MONEY" | "CELTIS" | "FEDAPAY";
+
+export interface ComptePayoutChauffeur {
+  id: string;
+  chauffeur_id: string;
+  operateur: PayoutOperateur;
+  telephone: string;
+  actif: boolean;
+}
+
+export interface ComptePayoutCreatePayload {
+  operateur: PayoutOperateur;
+  telephone: string;
 }

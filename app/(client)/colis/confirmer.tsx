@@ -8,11 +8,13 @@ import {
   ActivityIndicator,
   Platform,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router, useLocalSearchParams } from "expo-router";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import { useVoyageDetail } from "@/src/hooks/useVoyages";
 import { useCreateColis } from "@/src/hooks/useColis";
+import { colisApi } from "@/src/api/endpoints/colis";
 import { getErrorMessage } from "@/src/utils/error-handler";
 import { useToast } from "@/src/components/common/Toast";
 import { colors, typography, spacing, radii, shadows } from "@/src/theme";
@@ -65,10 +67,12 @@ type Params = {
   ville_depart:            string;
   ville_arrivee:           string;
   modalite_paiement:       string;
+  photo_uri:               string;
 };
 
 // ── Écran ─────────────────────────────────────────────────────────────────────
 export default function ConfirmerColisScreen() {
+  const insets = useSafeAreaInsets();
   const params  = useLocalSearchParams<Params>();
   const { showToast } = useToast();
   const {
@@ -83,6 +87,7 @@ export default function ConfirmerColisScreen() {
   const catInfo = CAT[cat] ?? CAT.AUTRE;
   const isFragile = fragile === "1";
   const isLivraison = modalite_paiement !== "A_LA_CONFIRMATION";
+  const { photo_uri } = params;
 
   const handleConfirm = async () => {
     try {
@@ -96,6 +101,15 @@ export default function ConfirmerColisScreen() {
         destinataire_telephone,
         modalite_paiement:       (modalite_paiement as ColisModalitePaiement) || "A_LA_LIVRAISON",
       });
+
+      if (photo_uri) {
+        try {
+          await colisApi.uploadPhoto(newColis.id, photo_uri);
+        } catch {
+          // L'upload photo est non-bloquant : le colis est créé même si ça échoue
+        }
+      }
+
       showToast("Colis enregistré ! En attente de confirmation du chauffeur.", "success");
       router.replace(`/(client)/colis/${newColis.id}` as any);
     } catch (e) {

@@ -9,6 +9,7 @@ import {
   RefreshControl,
   Platform,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
@@ -92,6 +93,7 @@ function ColisCard({ colis }: { colis: Colis }) {
 
 // ── Écran ─────────────────────────────────────────────────────────────────────
 export default function ColisScreen() {
+  const insets = useSafeAreaInsets();
   const { data: colis, isLoading, refetch, isRefetching } = useMesColis();
 
   const actifs   = colis?.filter((c) => c.statut !== "LIVRE" && c.statut !== "ANNULE") ?? [];

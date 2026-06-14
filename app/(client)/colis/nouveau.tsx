@@ -9,18 +9,24 @@ import {
   FlatList,
   TextInput,
   KeyboardAvoidingView,
+  ScrollView,
+  Image,
+  Alert,
   Platform,
 } from "react-native";
+import * as ImagePicker from "expo-image-picker";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, {
   FadeInRight,
   FadeOutLeft,
   FadeInLeft,
   FadeOutRight,
   FadeIn,
+  FadeInDown,
 } from "react-native-reanimated";
 import { router } from "expo-router";
 import { colors, typography, spacing, radii, shadows } from "@/src/theme";
-import { VILLES_LIST } from "@/src/constants/cities";
+import { useVilles } from "@/src/hooks/useGares";
 import type { ColisCategorie, ColisModalitePaiement } from "@/src/api/types";
 
 // ── Données ───────────────────────────────────────────────────────────────────
@@ -34,6 +40,15 @@ const CATEGORIES: { key: ColisCategorie; label: string; icon: string }[] = [
 ];
 
 const STEP_LABELS = ["Trajet", "Contenu", "Destinataire"];
+
+const CAT_COLORS: Record<string, string> = {
+  DOCUMENTS:    "#3B82F6",
+  VETEMENTS:    "#8B5CF6",
+  ELECTRONIQUE: "#0EA5E9",
+  ALIMENTAIRE:  "#22C55E",
+  FRAGILE:      "#F59E0B",
+  AUTRE:        "#6B7280",
+};
 
 // ── Indicateur d'étapes ───────────────────────────────────────────────────────
 function StepIndicator({ current }: { current: number }) {
@@ -90,6 +105,7 @@ function CityPickerModal({
   title,
   selected,
   exclude,
+  cities: citiesProp,
   onSelect,
   onClose,
 }: {
@@ -97,13 +113,14 @@ function CityPickerModal({
   title: string;
   selected: string;
   exclude?: string;
+  cities: string[];
   onSelect: (v: string) => void;
   onClose: () => void;
 }) {
   const [query, setQuery] = useState("");
   useEffect(() => { if (!visible) setQuery(""); }, [visible]);
 
-  const all = VILLES_LIST.filter((v) => v !== exclude);
+  const all = citiesProp.filter((v) => v !== exclude);
   const cities = query.trim()
     ? all.filter((v) => v.toLowerCase().includes(query.toLowerCase()))
     : all;
@@ -246,8 +263,12 @@ function CityBtn({
 
 // ── Écran principal ───────────────────────────────────────────────────────────
 export default function NouveauColisScreen() {
+  const insets = useSafeAreaInsets();
   const [step, setStep] = useState(1);
   const directionRef = useRef<"forward" | "backward">("forward");
+
+  const { data: villesData, isLoading: villesLoading } = useVilles();
+  const villesList = villesData?.filter((v) => v.actif).map((v) => v.nom) ?? [];
 
   // Step 1
   const [villeDepart,  setVilleDepart]  = useState("");
@@ -259,6 +280,7 @@ export default function NouveauColisScreen() {
   const [categorie,   setCategorie]   = useState<ColisCategorie>("AUTRE");
   const [poids,       setPoids]       = useState("");
   const [fragile,     setFragile]     = useState(false);
+  const [photo,       setPhoto]       = useState<string | null>(null);
 
   // Step 3
   const [destNom,   setDestNom]   = useState("");
@@ -266,6 +288,40 @@ export default function NouveauColisScreen() {
   const [modalite,  setModalite]  = useState<ColisModalitePaiement>("A_LA_LIVRAISON");
 
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const handlePickPhoto = () => {
+    Alert.alert("Photo du colis", "Comment souhaitez-vous ajouter la photo ?", [
+      {
+        text: "Prendre une photo",
+        onPress: async () => {
+          const { status } = await ImagePicker.requestCameraPermissionsAsync();
+          if (status !== "granted") {
+            Alert.alert("Permission refusée", "Autorisez l'accès à la caméra dans les paramètres.");
+            return;
+          }
+          const result = await ImagePicker.launchCameraAsync({
+            allowsEditing: true,
+            aspect: [4, 3],
+            quality: 0.85,
+          });
+          if (!result.canceled && result.assets[0]) setPhoto(result.assets[0].uri);
+        },
+      },
+      {
+        text: "Choisir depuis la galerie",
+        onPress: async () => {
+          const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ["images"],
+            allowsEditing: true,
+            aspect: [4, 3],
+            quality: 0.85,
+          });
+          if (!result.canceled && result.assets[0]) setPhoto(result.assets[0].uri);
+        },
+      },
+      { text: "Annuler", style: "cancel" },
+    ]);
+  };
 
   const validate = (s: number): boolean => {
     const e: Record<string, string> = {};
@@ -309,6 +365,7 @@ export default function NouveauColisScreen() {
           destinataire_nom:       destNom.trim(),
           destinataire_telephone: destTel.trim(),
           modalite_paiement:      modalite,
+          photo_uri:              photo || "",
         },
       });
     }
@@ -367,9 +424,9 @@ export default function NouveauColisScreen() {
                         <CityBtn
                           icon="🏙"
                           value={villeDepart}
-                          placeholder="Choisir la ville de départ"
+                          placeholder={villesLoading ? "Chargement…" : "Choisir la ville de départ"}
                           error={errors.villeDepart}
-                          onPress={() => setPickerTarget("depart")}
+                          onPress={() => !villesLoading && setPickerTarget("depart")}
                         />
                         {errors.villeDepart ? (
                           <Text style={styles.fieldError}>{errors.villeDepart}</Text>
@@ -394,9 +451,9 @@ export default function NouveauColisScreen() {
                         <CityBtn
                           icon="🎯"
                           value={villeArrivee}
-                          placeholder="Choisir la ville d'arrivée"
+                          placeholder={villesLoading ? "Chargement…" : "Choisir la ville d'arrivée"}
                           error={errors.villeArrivee}
-                          onPress={() => setPickerTarget("arrivee")}
+                          onPress={() => !villesLoading && setPickerTarget("arrivee")}
                         />
                         {errors.villeArrivee ? (
                           <Text style={styles.fieldError}>{errors.villeArrivee}</Text>
@@ -439,49 +496,77 @@ export default function NouveauColisScreen() {
             {/* ════ Étape 2 : Contenu ════ */}
             {step === 2 && (
               <>
-                <View style={styles.body}>
-                  <View style={styles.stepTitleBlock}>
-                    <Text style={styles.stepTitle}>Que contient votre colis ?</Text>
-                    <Text style={styles.stepSub}>Ces infos aident le chauffeur à préparer le transport</Text>
+                <ScrollView
+                  style={{ flex: 1 }}
+                  contentContainerStyle={styles.step2Scroll}
+                  showsVerticalScrollIndicator={false}
+                  keyboardShouldPersistTaps="handled"
+                >
+                  {/* ── Titre ── */}
+                  <View style={styles.step2Header}>
+                    <Text style={styles.step2Title}>Contenu du colis</Text>
+                    <Text style={styles.step2Sub}>Aidez le chauffeur à identifier et préparer votre envoi</Text>
                   </View>
 
-                  {/* Description */}
-                  <View style={styles.fieldBlock}>
-                    <Text style={styles.fieldLabel}>
-                      <Text style={styles.fieldLabelDot}>● </Text>Description du contenu
-                    </Text>
+                  {/* ── 01 · Description ── */}
+                  <View style={styles.s2Card}>
+                    <View style={styles.s2CardHead}>
+                      <View style={styles.s2Num}><Text style={styles.s2NumText}>01</Text></View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.s2CardTitle}>Description du contenu</Text>
+                        <Text style={styles.s2CardSub}>Que contient exactement ce colis ?</Text>
+                      </View>
+                      <View style={styles.requiredBadge}><Text style={styles.requiredBadgeText}>Requis</Text></View>
+                    </View>
                     <TextInput
-                      style={[styles.textInput, styles.textArea, !!errors.description && styles.textInputError]}
+                      style={[styles.descInput, !!errors.description && styles.textInputError]}
                       value={description}
                       onChangeText={(t) => { setDescription(t); if (errors.description) setErrors((e) => ({ ...e, description: "" })); }}
-                      placeholder="Ex : Vêtements pour ma sœur, médicaments, documents…"
+                      placeholder="Ex : Vêtements pour ma sœur, médicaments, documents officiels…"
                       placeholderTextColor={colors.textMuted}
                       multiline
-                      numberOfLines={2}
+                      numberOfLines={3}
                       textAlignVertical="top"
+                      maxLength={200}
                     />
-                    {errors.description ? (
-                      <Text style={styles.fieldError}>{errors.description}</Text>
-                    ) : null}
+                    <View style={styles.descFooter}>
+                      {errors.description
+                        ? <Text style={styles.fieldError}>{errors.description}</Text>
+                        : <Text style={styles.fieldHint}>Soyez précis pour faciliter la livraison</Text>}
+                      <Text style={[styles.fieldHint, description.length >= 180 && { color: colors.warning }]}>
+                        {description.length}/200
+                      </Text>
+                    </View>
                   </View>
 
-                  {/* Catégorie */}
-                  <View style={styles.fieldBlock}>
-                    <Text style={styles.fieldLabel}>
-                      <Text style={styles.fieldLabelDot}>● </Text>Catégorie
-                    </Text>
+                  {/* ── 02 · Catégorie ── */}
+                  <View style={styles.s2Card}>
+                    <View style={styles.s2CardHead}>
+                      <View style={styles.s2Num}><Text style={styles.s2NumText}>02</Text></View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.s2CardTitle}>Catégorie</Text>
+                        <Text style={styles.s2CardSub}>Sélectionnez le type de votre colis</Text>
+                      </View>
+                    </View>
                     <View style={styles.catGrid}>
                       {CATEGORIES.map((cat) => {
                         const active = categorie === cat.key;
+                        const catColor = CAT_COLORS[cat.key] ?? colors.primary;
                         return (
                           <Pressable
                             key={cat.key}
-                            style={[styles.catCard, active && styles.catCardActive]}
+                            style={[styles.catCard, active && { borderColor: catColor, backgroundColor: `${catColor}12` }]}
                             onPress={() => setCategorie(cat.key)}
                           >
-                            {active && <View style={styles.catCheck}><Text style={styles.catCheckText}>✓</Text></View>}
-                            <Text style={styles.catIcon}>{cat.icon}</Text>
-                            <Text style={[styles.catLabel, active && styles.catLabelActive]}>
+                            {active && (
+                              <View style={[styles.catCheck, { backgroundColor: catColor }]}>
+                                <Text style={styles.catCheckText}>✓</Text>
+                              </View>
+                            )}
+                            <View style={[styles.catIconWrap, active && { backgroundColor: `${catColor}20` }]}>
+                              <Text style={styles.catIcon}>{cat.icon}</Text>
+                            </View>
+                            <Text style={[styles.catLabel, active && { color: catColor, fontFamily: typography.fontFamily.bold }]}>
                               {cat.label}
                             </Text>
                           </Pressable>
@@ -490,42 +575,99 @@ export default function NouveauColisScreen() {
                     </View>
                   </View>
 
-                  {/* Poids + Fragile */}
-                  <View style={styles.poidsFragileRow}>
-                    <View style={styles.poidsBlock}>
-                      <Text style={styles.fieldLabel}>
-                        <Text style={styles.fieldLabelDot}>● </Text>Poids (kg)
-                      </Text>
-                      <TextInput
-                        style={[styles.textInput, styles.poidsInput]}
-                        value={poids}
-                        onChangeText={setPoids}
-                        placeholder="Ex : 2.5"
-                        placeholderTextColor={colors.textMuted}
-                        keyboardType="decimal-pad"
-                        returnKeyType="done"
-                      />
-                      <Text style={styles.fieldHint}>Optionnel</Text>
+                  {/* ── 03 · Photo ── */}
+                  <Animated.View entering={FadeInDown.duration(350).springify()} style={styles.s2Card}>
+                    <View style={styles.s2CardHead}>
+                      <View style={[styles.s2Num, styles.s2NumPhoto]}><Text style={styles.s2NumText}>03</Text></View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.s2CardTitle}>Photo du colis</Text>
+                        <Text style={styles.s2CardSub}>Facilite l'identification à la récupération</Text>
+                      </View>
+                      <View style={styles.optionalBadge}><Text style={styles.optionalBadgeText}>Optionnel</Text></View>
                     </View>
 
-                    <Pressable
-                      style={[styles.fragileCard, fragile && styles.fragileCardActive]}
-                      onPress={() => setFragile((f) => !f)}
-                    >
-                      <Text style={styles.fragileCardIcon}>🔮</Text>
-                      <Text style={[styles.fragileCardLabel, fragile && styles.fragileCardLabelActive]}>
-                        Fragile
-                      </Text>
-                      <Switch
-                        value={fragile}
-                        onValueChange={setFragile}
-                        trackColor={{ true: colors.warning, false: colors.border }}
-                        thumbColor={colors.white}
-                        style={{ transform: [{ scaleX: 0.85 }, { scaleY: 0.85 }] }}
-                      />
-                    </Pressable>
+                    {photo ? (
+                      <Animated.View entering={FadeInDown.duration(250)} style={styles.photoPreviewWrap}>
+                        <Image source={{ uri: photo }} style={styles.photoPreview} resizeMode="cover" />
+                        <View style={styles.photoPreviewBadge}>
+                          <Text style={styles.photoPreviewBadgeText}>
+                            {CATEGORIES.find(c => c.key === categorie)?.icon} {CATEGORIES.find(c => c.key === categorie)?.label}
+                          </Text>
+                        </View>
+                        <View style={styles.photoActionRow}>
+                          <Pressable style={styles.photoActionBtn} onPress={handlePickPhoto}>
+                            <Text style={styles.photoActionIcon}>🔄</Text>
+                            <Text style={styles.photoActionText}>Changer la photo</Text>
+                          </Pressable>
+                          <Pressable style={[styles.photoActionBtn, styles.photoActionBtnDel]} onPress={() => setPhoto(null)}>
+                            <Text style={styles.photoActionIcon}>🗑</Text>
+                            <Text style={[styles.photoActionText, { color: colors.error }]}>Supprimer</Text>
+                          </Pressable>
+                        </View>
+                      </Animated.View>
+                    ) : (
+                      <Pressable style={styles.photoZone} onPress={handlePickPhoto} android_ripple={{ color: `${colors.primary}20` }}>
+                        <View style={styles.photoZoneIconCircle}>
+                          <Text style={styles.photoZoneIconText}>📷</Text>
+                        </View>
+                        <Text style={styles.photoZoneTitle}>Photographier le colis</Text>
+                        <Text style={styles.photoZoneSub}>Appareil photo ou galerie</Text>
+                        <View style={styles.photoZoneCatChip}>
+                          <Text style={styles.photoZoneCatText}>
+                            {CATEGORIES.find(c => c.key === categorie)?.icon}{" "}
+                            {CATEGORIES.find(c => c.key === categorie)?.label}
+                          </Text>
+                        </View>
+                      </Pressable>
+                    )}
+                  </Animated.View>
+
+                  {/* ── 04 · Détails ── */}
+                  <View style={styles.s2Card}>
+                    <View style={styles.s2CardHead}>
+                      <View style={styles.s2Num}><Text style={styles.s2NumText}>04</Text></View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.s2CardTitle}>Détails supplémentaires</Text>
+                        <Text style={styles.s2CardSub}>Poids et fragilité du colis</Text>
+                      </View>
+                    </View>
+                    <View style={styles.detailsRow}>
+                      {/* Poids */}
+                      <View style={styles.detailsPoidsWrap}>
+                        <Text style={styles.detailsLabel}>⚖️  Poids estimé</Text>
+                        <View style={styles.detailsPoidsRow}>
+                          <TextInput
+                            style={styles.poidsInput}
+                            value={poids}
+                            onChangeText={setPoids}
+                            placeholder="0.0"
+                            placeholderTextColor={colors.textMuted}
+                            keyboardType="decimal-pad"
+                            returnKeyType="done"
+                          />
+                          <View style={styles.poidsUnit}>
+                            <Text style={styles.poidsUnitText}>kg</Text>
+                          </View>
+                        </View>
+                        <Text style={styles.fieldHint}>Optionnel</Text>
+                      </View>
+
+                      {/* Fragile */}
+                      <Pressable
+                        style={[styles.fragileBtn, fragile && styles.fragileBtnActive]}
+                        onPress={() => setFragile((f) => !f)}
+                      >
+                        <Text style={styles.fragileBtnIcon}>{fragile ? "⚠️" : "🔮"}</Text>
+                        <Text style={[styles.fragileBtnLabel, fragile && styles.fragileBtnLabelActive]}>
+                          {fragile ? "Fragile" : "Fragile ?"}
+                        </Text>
+                        <Text style={[styles.fragileBtnStatus, fragile && styles.fragileBtnStatusActive]}>
+                          {fragile ? "OUI" : "NON"}
+                        </Text>
+                      </Pressable>
+                    </View>
                   </View>
-                </View>
+                </ScrollView>
 
                 <View style={styles.ctaArea}>
                   <Pressable
@@ -651,6 +793,7 @@ export default function NouveauColisScreen() {
         title={pickerTarget === "depart" ? "Ville de départ" : "Ville d'arrivée"}
         selected={pickerTarget === "depart" ? villeDepart : villeArrivee}
         exclude={pickerTarget === "depart" ? villeArrivee : villeDepart}
+        cities={villesList}
         onClose={() => setPickerTarget(null)}
         onSelect={(v) => {
           if (pickerTarget === "depart") setVilleDepart(v);
@@ -832,11 +975,11 @@ const styles = StyleSheet.create({
     width: "30%",
     flexGrow: 1,
     backgroundColor: colors.white,
-    borderRadius: radii.lg,
-    paddingVertical: spacing.md,
+    borderRadius: radii.xl,
+    paddingVertical: spacing.lg,
     paddingHorizontal: spacing.sm,
     alignItems: "center",
-    gap: 4,
+    gap: 6,
     borderWidth: 1.5,
     borderColor: colors.border,
     overflow: "hidden",
@@ -858,7 +1001,19 @@ const styles = StyleSheet.create({
   // Poids + Fragile row
   poidsFragileRow: { flexDirection: "row", gap: spacing.md, alignItems: "flex-start" },
   poidsBlock: { flex: 1, gap: spacing.xs },
-  poidsInput: { paddingVertical: spacing.sm },
+  poidsInput: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    borderRadius: radii.lg,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    fontSize: typography.fontSize.lg,
+    fontFamily: typography.fontFamily.bold,
+    color: colors.textPrimary,
+    textAlign: "center",
+  },
   fragileCard: {
     flex: 1,
     backgroundColor: colors.white,
@@ -938,4 +1093,299 @@ const styles = StyleSheet.create({
   ctaBtnOff: { opacity: 0.35 },
   ctaBtnText: { fontSize: typography.fontSize.lg, fontFamily: typography.fontFamily.bold, color: colors.white },
   ctaBtnArrow: { fontSize: typography.fontSize.lg, fontFamily: typography.fontFamily.bold, color: `${colors.white}cc` },
+
+  // ── Step 2 layout ────────────────────────────────────────────────────────────
+  step2Scroll: {
+    paddingHorizontal: spacing["2xl"],
+    paddingTop: spacing.xl,
+    paddingBottom: 32,
+    gap: spacing.lg,
+  },
+  step2Header: { gap: 4, marginBottom: spacing.xs },
+  step2Title: {
+    fontSize: typography.fontSize["2xl"],
+    fontFamily: typography.fontFamily.bold,
+    color: colors.textPrimary,
+  },
+  step2Sub: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.regular,
+    color: colors.textMuted,
+    lineHeight: 20,
+  },
+
+  // Section card
+  s2Card: {
+    backgroundColor: colors.white,
+    borderRadius: radii["2xl"],
+    padding: spacing.xl,
+    gap: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadows.sm,
+  },
+  s2CardHead: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: spacing.md,
+  },
+  s2Num: {
+    width: 28, height: 28, borderRadius: 14,
+    backgroundColor: colors.primary,
+    alignItems: "center", justifyContent: "center",
+    marginTop: 1,
+    flexShrink: 0,
+  },
+  s2NumPhoto: { backgroundColor: "#0EA5E9" },
+  s2NumText: {
+    fontSize: 10,
+    fontFamily: typography.fontFamily.bold,
+    color: colors.white,
+    letterSpacing: 0.3,
+  },
+  s2CardTitle: {
+    fontSize: typography.fontSize.base,
+    fontFamily: typography.fontFamily.bold,
+    color: colors.textPrimary,
+    lineHeight: 20,
+  },
+  s2CardSub: {
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamily.regular,
+    color: colors.textMuted,
+    lineHeight: 16,
+    marginTop: 1,
+  },
+
+  // Badges
+  requiredBadge: {
+    backgroundColor: `${colors.error}15`,
+    borderRadius: radii.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+    marginTop: 2,
+  },
+  requiredBadgeText: {
+    fontSize: 9,
+    fontFamily: typography.fontFamily.bold,
+    color: colors.error,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+  },
+  optionalBadge: {
+    backgroundColor: colors.surface,
+    borderRadius: radii.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginTop: 2,
+  },
+  optionalBadgeText: {
+    fontSize: 9,
+    fontFamily: typography.fontFamily.medium,
+    color: colors.textMuted,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+  },
+
+  // Description input
+  descInput: {
+    backgroundColor: colors.surface,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    borderRadius: radii.lg,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    fontSize: typography.fontSize.base,
+    fontFamily: typography.fontFamily.regular,
+    color: colors.textPrimary,
+    minHeight: 88,
+    textAlignVertical: "top",
+  },
+  descFooter: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: -spacing.xs,
+  },
+
+  // Category grid — icons with background
+  catIconWrap: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: colors.surface,
+    alignItems: "center", justifyContent: "center",
+    marginBottom: 2,
+  },
+
+  // Photo zone (empty state)
+  photoZone: {
+    alignItems: "center",
+    gap: spacing.sm,
+    backgroundColor: `${colors.primary}07`,
+    borderRadius: radii.xl,
+    borderWidth: 2,
+    borderColor: `${colors.primary}35`,
+    borderStyle: "dashed",
+    paddingVertical: spacing["2xl"],
+    paddingHorizontal: spacing.xl,
+    overflow: "hidden",
+  },
+  photoZoneIconCircle: {
+    width: 72, height: 72, borderRadius: 36,
+    backgroundColor: `${colors.primary}15`,
+    alignItems: "center", justifyContent: "center",
+    marginBottom: spacing.xs,
+    borderWidth: 2,
+    borderColor: `${colors.primary}25`,
+  },
+  photoZoneIconText: { fontSize: 32 },
+  photoZoneTitle: {
+    fontSize: typography.fontSize.lg,
+    fontFamily: typography.fontFamily.bold,
+    color: colors.primary,
+  },
+  photoZoneSub: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.regular,
+    color: colors.textMuted,
+  },
+  photoZoneCatChip: {
+    backgroundColor: `${colors.primary}15`,
+    borderRadius: radii.full,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.xs,
+    marginTop: spacing.xs,
+    borderWidth: 1,
+    borderColor: `${colors.primary}30`,
+  },
+  photoZoneCatText: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.semiBold,
+    color: colors.primary,
+  },
+
+  // Photo preview (filled state)
+  photoPreviewWrap: { gap: spacing.md },
+  photoPreview: {
+    width: "100%",
+    height: 200,
+    borderRadius: radii.lg,
+    backgroundColor: colors.surface,
+  },
+  photoPreviewBadge: {
+    position: "absolute",
+    top: spacing.sm,
+    left: spacing.sm,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    borderRadius: radii.full,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 4,
+  },
+  photoPreviewBadgeText: {
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamily.semiBold,
+    color: colors.white,
+  },
+  photoActionRow: { flexDirection: "row", gap: spacing.md },
+  photoActionBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.xs,
+    backgroundColor: colors.surface,
+    borderRadius: radii.lg,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    paddingVertical: spacing.md,
+  },
+  photoActionBtnDel: {
+    borderColor: `${colors.error}40`,
+    backgroundColor: `${colors.error}07`,
+  },
+  photoActionIcon: { fontSize: 15 },
+  photoActionText: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.semiBold,
+    color: colors.textSecondary,
+  },
+
+  // Details (poids + fragile)
+  detailsRow: { flexDirection: "row", gap: spacing.md, alignItems: "stretch" },
+  detailsPoidsWrap: { flex: 1, gap: spacing.sm },
+  detailsLabel: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.semiBold,
+    color: colors.textSecondary,
+  },
+  detailsPoidsRow: { flexDirection: "row", alignItems: "center", gap: spacing.xs },
+  poidsUnit: {
+    backgroundColor: colors.surface,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+  },
+  poidsUnitText: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.bold,
+    color: colors.textMuted,
+  },
+  fragileBtn: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.xs,
+    backgroundColor: colors.surface,
+    borderRadius: radii.xl,
+    borderWidth: 2,
+    borderColor: colors.border,
+    paddingVertical: spacing.lg,
+  },
+  fragileBtnActive: {
+    borderColor: colors.warning,
+    backgroundColor: colors.warningBg,
+  },
+  fragileBtnIcon: { fontSize: 26 },
+  fragileBtnLabel: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.semiBold,
+    color: colors.textMuted,
+  },
+  fragileBtnLabelActive: { color: colors.warningText },
+  fragileBtnStatus: {
+    fontSize: 10,
+    fontFamily: typography.fontFamily.bold,
+    color: colors.textMuted,
+    letterSpacing: 0.8,
+    backgroundColor: colors.border,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 2,
+    borderRadius: 999,
+  },
+  fragileBtnStatusActive: {
+    color: colors.warningText,
+    backgroundColor: `${colors.warning}40`,
+  },
+
+  // Keep old aliases to avoid breaking step 3 references
+  sectionCard: {
+    backgroundColor: colors.white,
+    borderRadius: radii.xl,
+    padding: spacing.lg,
+    gap: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    ...shadows.sm,
+  },
+  sectionCardTitleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  sectionCardTitle: { fontSize: typography.fontSize.base, fontFamily: typography.fontFamily.semiBold, color: colors.textPrimary },
+  detailsCardFlex: { flex: 1 },
+  fragileToggleCard: { alignItems: "center", justifyContent: "center" },
+  fragileToggleCardActive: { borderColor: colors.warning, backgroundColor: colors.warningBg },
+  fragileToggleIcon: { fontSize: 24 },
+  fragileToggleLabel: { fontSize: typography.fontSize.sm, fontFamily: typography.fontFamily.semiBold, color: colors.textSecondary, textAlign: "center" },
+  fragileToggleLabelActive: { color: colors.warningText },
 });

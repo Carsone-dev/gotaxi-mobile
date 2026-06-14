@@ -9,6 +9,7 @@ import {
   ScrollView,
   Platform,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { router, useLocalSearchParams } from "expo-router";
 import { format } from "date-fns";
@@ -132,6 +133,7 @@ function VoyageCard({ voyage, index }: { voyage: Voyage; index: number }) {
 
 // ── Écran ─────────────────────────────────────────────────────────────────────
 export default function ResultsScreen() {
+  const insets = useSafeAreaInsets();
   const { ville_depart, ville_arrivee, date_depart, nombre_places } =
     useLocalSearchParams<{
       ville_depart: string;
