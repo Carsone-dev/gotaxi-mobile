@@ -227,6 +227,7 @@ export default function PublishVoyageScreen() {
   // ── Navigation par étape ──
   const [step, setStep] = useState(0);
   const directionRef = useRef<"forward" | "backward">("forward");
+  const [trajetErrorModal, setTrajetErrorModal] = useState<string | null>(null);
 
   // ── Progression animée ──
   const progressWidth = useSharedValue(SCREEN_W / TOTAL_STEPS);
@@ -348,7 +349,7 @@ export default function PublishVoyageScreen() {
     switch (step) {
       case 0: return !!vehiculeId;
       case 1:
-        return !!(gareDepart && gareArrivee && gareDepart.id !== gareArrivee.id);
+        return !!(gareDepart && gareArrivee);
       case 2: return departure > new Date();
       case 3: {
         const n = Number(prix);
@@ -361,6 +362,23 @@ export default function PublishVoyageScreen() {
 
   const handleNext = () => {
     if (!stepValid()) return;
+
+    // Validation itinéraire : même ville ou même gare
+    if (step === 1) {
+      if (villeIdDepart === villeIdArrivee) {
+        setTrajetErrorModal(
+          "La ville de départ et la ville d'arrivée sont identiques.\n\nVeuillez sélectionner deux villes différentes pour votre trajet."
+        );
+        return;
+      }
+      if (gareDepart && gareArrivee && gareDepart.id === gareArrivee.id) {
+        setTrajetErrorModal(
+          "La gare de départ et la gare d'arrivée sont identiques.\n\nVeuillez sélectionner deux gares différentes pour votre trajet."
+        );
+        return;
+      }
+    }
+
     if (step < TOTAL_STEPS - 1) {
       directionRef.current = "forward";
       setStep((s) => s + 1);
@@ -562,6 +580,30 @@ export default function PublishVoyageScreen() {
           )}
         </Pressable>
       </View>
+
+      {/* ── Modal erreur trajet ── */}
+      <Modal
+        visible={trajetErrorModal !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setTrajetErrorModal(null)}
+      >
+        <View style={alertStyles.overlay}>
+          <View style={alertStyles.card}>
+            <Text style={alertStyles.alertIcon}>🚫</Text>
+            <Text style={alertStyles.alertTitle}>Trajet erroné</Text>
+            <Text style={alertStyles.alertMessage}>{trajetErrorModal}</Text>
+            <View style={alertStyles.btnRow}>
+              <Pressable
+                style={alertStyles.btnPrimary}
+                onPress={() => setTrajetErrorModal(null)}
+              >
+                <Text style={alertStyles.btnPrimaryTxt}>Corriger le trajet</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* ── Modal sélecteur de ville ── */}
       <ListModal
@@ -892,11 +934,6 @@ function StepItineraire({
 
       </View>
 
-      {sameGare && (
-        <Text style={stepStyles.errorNote}>
-          La gare de départ et d'arrivée doivent être différentes.
-        </Text>
-      )}
     </View>
   );
 }
