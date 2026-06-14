@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   View,
   Text,
@@ -19,18 +19,11 @@ import Animated, {
   FadeOutRight,
   FadeIn,
   FadeInDown,
-  useSharedValue,
-  withRepeat,
-  withSequence,
-  withTiming,
-  useAnimatedStyle,
 } from "react-native-reanimated";
-import * as Location from "expo-location";
 import * as Haptics from "expo-haptics";
-import { router, useFocusEffect } from "expo-router";
+import { router } from "expo-router";
 import { format, addDays } from "date-fns";
 import { fr } from "date-fns/locale";
-import { nearestCity } from "@/src/constants/cities";
 import { useSearchVoyages } from "@/src/hooks/useVoyages";
 import { useVilles, useGaresByVille } from "@/src/hooks/useGares";
 import { formatFCFA } from "@/src/utils/formatters";
@@ -125,7 +118,7 @@ const si = StyleSheet.create({
   circleTextIdleLight:   { color: "rgba(255,255,255,0.5)" },
   circleTextFilledLight: { color: colors.primary },
   label: {
-    fontSize: 9,
+    fontSize: 11,
     fontFamily: typography.fontFamily.medium,
     color: colors.textMuted,
   },
@@ -210,6 +203,94 @@ function CityPickerModal({
                 >
                   <Text style={styles.modalItemPin}>📍</Text>
                   <Text style={styles.modalItemTxt}>{item}</Text>
+                  <Text style={styles.modalItemChevron}>›</Text>
+                </Pressable>
+              )}
+            />
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// ── Modal sélection de gare ───────────────────────────────────────────────────
+function GarePickerModal({
+  visible, title, villeNom, onSelect, onClose,
+}: {
+  visible: boolean; title: string; villeNom: string;
+  onSelect: (nom: string) => void; onClose: () => void;
+}) {
+  const [query, setQuery] = useState("");
+  useEffect(() => { if (!visible) setQuery(""); }, [visible]);
+
+  const { data: villes } = useVilles();
+  const villeId = villes?.find((v) => v.nom === villeNom)?.id ?? null;
+  const { data: gares, isLoading } = useGaresByVille(villeId);
+  const activeGares = (gares ?? []).filter((g) => g.actif);
+
+  const filtered = query.trim()
+    ? activeGares.filter((g) => g.nom.toLowerCase().includes(query.toLowerCase()))
+    : activeGares;
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={styles.modalOverlay}>
+        <Pressable style={StyleSheet.absoluteFillObject} onPress={onClose} />
+        <View style={styles.modalSheet}>
+          <View style={styles.modalHandle} />
+          <View style={styles.modalHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.modalTitle}>{title}</Text>
+              {villeNom ? <Text style={styles.modalSubTitle}>{villeNom}</Text> : null}
+            </View>
+            <Pressable style={styles.modalCloseBtn} onPress={onClose} hitSlop={12}>
+              <Text style={styles.modalCloseTxt}>✕</Text>
+            </Pressable>
+          </View>
+          <View style={styles.modalSearchRow}>
+            <Text style={styles.modalSearchIcon}>🔍</Text>
+            <TextInput
+              style={styles.modalSearchInput}
+              value={query}
+              onChangeText={setQuery}
+              placeholder="Rechercher une gare…"
+              placeholderTextColor={colors.textMuted}
+              returnKeyType="search"
+            />
+            {query.length > 0 && (
+              <Pressable onPress={() => setQuery("")} hitSlop={8}>
+                <Text style={styles.modalClear}>✕</Text>
+              </Pressable>
+            )}
+          </View>
+          {isLoading && activeGares.length === 0 ? (
+            <View style={styles.modalEmpty}>
+              <ActivityIndicator color={colors.primary} size="small" />
+              <Text style={[styles.modalEmptyTxt, { marginTop: spacing.sm }]}>
+                Chargement des gares…
+              </Text>
+            </View>
+          ) : filtered.length === 0 ? (
+            <View style={styles.modalEmpty}>
+              <Text style={{ fontSize: 40, marginBottom: spacing.sm }}>🚉</Text>
+              <Text style={styles.modalEmptyTxt}>
+                {query ? "Aucune gare trouvée" : "Aucune gare disponible pour cette ville"}
+              </Text>
+            </View>
+          ) : (
+            <FlatList
+              data={filtered}
+              keyExtractor={(g) => g.id}
+              style={{ maxHeight: 420 }}
+              keyboardShouldPersistTaps="handled"
+              renderItem={({ item }) => (
+                <Pressable
+                  style={({ pressed }) => [styles.modalItem, pressed && styles.modalItemPressed]}
+                  onPress={() => { Haptics.selectionAsync(); onSelect(item.nom); onClose(); }}
+                >
+                  <Text style={styles.modalItemPin}>🚉</Text>
+                  <Text style={styles.modalItemTxt}>{item.nom}</Text>
                   <Text style={styles.modalItemChevron}>›</Text>
                 </Pressable>
               )}
@@ -351,27 +432,27 @@ function GareSuggestions({
 }
 
 const gs = StyleSheet.create({
-  wrap: { gap: 6 },
+  wrap: { gap: spacing.sm },
   label: {
-    fontSize: typography.fontSize.xs,
-    fontFamily: typography.fontFamily.medium,
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.semiBold,
     color: colors.textMuted,
     textTransform: "uppercase",
-    letterSpacing: 0.5,
+    letterSpacing: 0.6,
   },
   row: { flexDirection: "row", gap: spacing.sm, paddingVertical: 2 },
   chip: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: 7,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: 10,
     borderRadius: radii.full,
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: colors.border,
     backgroundColor: colors.white,
   },
   chipActive:  { backgroundColor: `${colors.primary}12`, borderColor: `${colors.primary}50` },
   chipPressed: { backgroundColor: colors.surface },
   chipTxt: {
-    fontSize: typography.fontSize.sm,
+    fontSize: typography.fontSize.base,
     fontFamily: typography.fontFamily.medium,
     color: colors.textSecondary,
   },
@@ -646,14 +727,15 @@ export default function VoyagesScreen() {
   // Étape 1
   const [cityDepart,  setCityDepart]  = useState("");
   const [pointDepart, setPointDepart] = useState("");
-  const [locStatus,   setLocStatus]   = useState<"idle" | "detecting" | "found" | "denied">("idle");
-  const [showDepartPicker, setShowDepartPicker] = useState(false);
+  const [showDepartPicker,     setShowDepartPicker]     = useState(false);
+  const [showDepartGarePicker, setShowDepartGarePicker] = useState(false);
 
   // Étape 2
   const [cityArrivee,   setCityArrivee]   = useState("");
   const [pointArrivee,  setPointArrivee]  = useState("");
   const [searchDate,    setSearchDate]    = useState(() => toDateStr(new Date()));
-  const [showArriveePicker, setShowArriveePicker] = useState(false);
+  const [showArriveePicker,     setShowArriveePicker]     = useState(false);
+  const [showArriveeGarePicker, setShowArriveeGarePicker] = useState(false);
 
   // Étape 3
   const [selectedVoyage, setSelectedVoyage] = useState<Voyage | null>(null);
@@ -671,24 +753,6 @@ export default function VoyagesScreen() {
   useEffect(() => { setPointDepart(""); }, [cityDepart]);
   useEffect(() => { setPointArrivee(""); }, [cityArrivee]);
 
-  // Animation pulse GPS
-  const pulseAnim = useSharedValue(0);
-  const pulseStyle = useAnimatedStyle(() => ({
-    opacity: pulseAnim.value * 0.45,
-    transform: [{ scale: 1 + pulseAnim.value * 0.4 }],
-  }));
-
-  useEffect(() => {
-    if (locStatus === "detecting") {
-      pulseAnim.value = withRepeat(
-        withSequence(withTiming(1, { duration: 700 }), withTiming(0, { duration: 700 })),
-        -1, false,
-      );
-    } else {
-      pulseAnim.value = withTiming(0, { duration: 300 });
-    }
-  }, [locStatus]);
-
   // Recherche voyages
   const {
     data: voyagesResult,
@@ -705,35 +769,6 @@ export default function VoyagesScreen() {
   );
   const voyagesDispos = (voyagesResult?.items ?? []).filter(
     (v) => v.statut === "PUBLIE" && v.nombre_places_restantes > 0,
-  );
-
-  // GPS
-  const detectLocation = useCallback(async () => {
-    setLocStatus("detecting");
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") { setLocStatus("denied"); return; }
-      const cached = await Location.getLastKnownPositionAsync({ maxAge: 300_000 });
-      if (cached) {
-        setCityDepart(nearestCity(cached.coords.latitude, cached.coords.longitude));
-        setLocStatus("found");
-        return;
-      }
-      const pos = await Promise.race([
-        Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
-        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 8_000)),
-      ]);
-      setCityDepart(nearestCity(pos.coords.latitude, pos.coords.longitude));
-      setLocStatus("found");
-    } catch {
-      setLocStatus("denied");
-    }
-  }, []);
-
-  useFocusEffect(
-    useCallback(() => {
-      if (locStatus === "idle") detectLocation();
-    }, [locStatus, detectLocation]),
   );
 
   function goTo(s: Step) {
@@ -782,7 +817,6 @@ export default function VoyagesScreen() {
     const tmp = cityDepart;
     setCityDepart(cityArrivee);
     setCityArrivee(tmp);
-    setLocStatus("found");
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   }
 
@@ -813,7 +847,7 @@ export default function VoyagesScreen() {
               <View style={styles.heroHeader}>
                 <StepIndicator step={step} light />
                 <Text style={styles.heroTitle}>D'où partez-vous ?</Text>
-                <Text style={styles.heroSub}>Ville et point d'embarquement</Text>
+                <Text style={styles.heroSub}>Choisissez votre ville et gare de départ</Text>
               </View>
 
               <ScrollView
@@ -822,42 +856,6 @@ export default function VoyagesScreen() {
                 keyboardShouldPersistTaps="handled"
                 showsVerticalScrollIndicator={false}
               >
-                {/* GPS Card */}
-                <Pressable
-                  style={[
-                    styles.gpsCard,
-                    locStatus === "found"  && styles.gpsCardFound,
-                    locStatus === "denied" && styles.gpsCardDenied,
-                  ]}
-                  onPress={detectLocation}
-                >
-                  <View style={styles.gpsIconOuter}>
-                    {locStatus === "detecting" && (
-                      <Animated.View style={[styles.gpsPulseRing, pulseStyle]} />
-                    )}
-                    <View style={[styles.gpsIconWrap, locStatus === "found" && styles.gpsIconWrapFound]}>
-                      {locStatus === "detecting"
-                        ? <ActivityIndicator color={colors.primary} size="small" />
-                        : <Text style={styles.gpsEmoji}>{locStatus === "found" ? "📍" : "🔍"}</Text>}
-                    </View>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.gpsLabel, locStatus === "found" && styles.gpsLabelFound]}>
-                      {locStatus === "detecting" ? "Localisation en cours…"
-                        : locStatus === "found"  ? cityDepart
-                        : "Détecter ma position"}
-                    </Text>
-                    <Text style={styles.gpsHint}>
-                      {locStatus === "found"
-                        ? "Ville détectée · Appuyez pour rafraîchir"
-                        : locStatus === "detecting"
-                        ? "Recherche du signal GPS…"
-                        : "Appuyez pour utiliser le GPS"}
-                    </Text>
-                  </View>
-                  <Text style={styles.gpsRefresh}>↻</Text>
-                </Pressable>
-
                 {/* Ville départ */}
                 <View style={styles.field}>
                   <Text style={styles.fieldLabel}>
@@ -882,23 +880,28 @@ export default function VoyagesScreen() {
                   <Text style={styles.fieldLabel}>
                     <Text style={styles.dot}>● </Text>Point d'embarquement
                   </Text>
-                  <TextInput
-                    style={[styles.textInput, pointDepart.length > 0 && styles.textInputFilled]}
-                    value={pointDepart}
-                    onChangeText={setPointDepart}
-                    placeholder="Ex : Gare de Cotonou, Carrefour Godomey…"
-                    placeholderTextColor={colors.textMuted}
-                    returnKeyType="done"
-                  />
-                  <Text style={styles.fieldHint}>Précisez l'endroit exact (min. 2 caractères)</Text>
-                  {/* Suggestions de gares depuis l'API */}
-                  {cityDepart ? (
-                    <GareSuggestions
-                      villeNom={cityDepart}
-                      currentValue={pointDepart}
-                      onSelect={setPointDepart}
-                    />
-                  ) : null}
+                  <Pressable
+                    style={[
+                      styles.cityBtn,
+                      !cityDepart && styles.cityBtnDisabled,
+                      !!pointDepart && styles.cityBtnFilled,
+                    ]}
+                    onPress={() => { if (cityDepart) setShowDepartGarePicker(true); }}
+                    disabled={!cityDepart}
+                  >
+                    <Text style={styles.cityIcon}>🚉</Text>
+                    <Text style={[styles.cityTxt, !pointDepart && styles.cityPlaceholder]}>
+                      {pointDepart || (cityDepart ? "Choisir une gare…" : "Sélectionnez d'abord une ville")}
+                    </Text>
+                    {pointDepart
+                      ? <View style={styles.cityCheckWrap}><Text style={styles.cityCheck}>✓</Text></View>
+                      : <View style={styles.chevronWrap}><Text style={styles.chevron}>▼</Text></View>}
+                  </Pressable>
+                  <Text style={styles.fieldHint}>
+                    {cityDepart
+                      ? "Appuyez pour choisir parmi les gares disponibles"
+                      : "Sélectionnez d'abord une ville de départ"}
+                  </Text>
                 </View>
               </ScrollView>
 
@@ -973,27 +976,33 @@ export default function VoyagesScreen() {
                   </Pressable>
                 </View>
 
-                {/* Point destination */}
+                {/* Point de destination */}
                 <View style={styles.field}>
                   <Text style={styles.fieldLabel}>
                     <Text style={styles.dot}>● </Text>Point de destination
                   </Text>
-                  <TextInput
-                    style={[styles.textInput, pointArrivee.length > 0 && styles.textInputFilled]}
-                    value={pointArrivee}
-                    onChangeText={setPointArrivee}
-                    placeholder="Ex : Gare de Parakou, Marché Central…"
-                    placeholderTextColor={colors.textMuted}
-                    returnKeyType="done"
-                  />
-                  <Text style={styles.fieldHint}>Précisez l'endroit exact (min. 2 caractères)</Text>
-                  {cityArrivee ? (
-                    <GareSuggestions
-                      villeNom={cityArrivee}
-                      currentValue={pointArrivee}
-                      onSelect={setPointArrivee}
-                    />
-                  ) : null}
+                  <Pressable
+                    style={[
+                      styles.cityBtn,
+                      !cityArrivee && styles.cityBtnDisabled,
+                      !!pointArrivee && styles.cityBtnFilled,
+                    ]}
+                    onPress={() => { if (cityArrivee) setShowArriveeGarePicker(true); }}
+                    disabled={!cityArrivee}
+                  >
+                    <Text style={styles.cityIcon}>🏁</Text>
+                    <Text style={[styles.cityTxt, !pointArrivee && styles.cityPlaceholder]}>
+                      {pointArrivee || (cityArrivee ? "Choisir une gare…" : "Sélectionnez d'abord une ville")}
+                    </Text>
+                    {pointArrivee
+                      ? <View style={styles.cityCheckWrap}><Text style={styles.cityCheck}>✓</Text></View>
+                      : <View style={styles.chevronWrap}><Text style={styles.chevron}>▼</Text></View>}
+                  </Pressable>
+                  <Text style={styles.fieldHint}>
+                    {cityArrivee
+                      ? "Appuyez pour choisir parmi les gares disponibles"
+                      : "Sélectionnez d'abord une ville de destination"}
+                  </Text>
                 </View>
 
                 {/* Date du voyage */}
@@ -1314,7 +1323,7 @@ export default function VoyagesScreen() {
       <CityPickerModal
         visible={showDepartPicker}
         title="Ville de départ"
-        onSelect={(v) => { setCityDepart(v); setLocStatus("found"); }}
+        onSelect={setCityDepart}
         onClose={() => setShowDepartPicker(false)}
       />
       <CityPickerModal
@@ -1323,6 +1332,20 @@ export default function VoyagesScreen() {
         exclude={cityDepart}
         onSelect={setCityArrivee}
         onClose={() => setShowArriveePicker(false)}
+      />
+      <GarePickerModal
+        visible={showDepartGarePicker}
+        title="Point de départ"
+        villeNom={cityDepart}
+        onSelect={setPointDepart}
+        onClose={() => setShowDepartGarePicker(false)}
+      />
+      <GarePickerModal
+        visible={showArriveeGarePicker}
+        title="Point d'arrivée"
+        villeNom={cityArrivee}
+        onSelect={setPointArrivee}
+        onClose={() => setShowArriveeGarePicker(false)}
       />
       <OverCapacityModal
         visible={showOverCapacity}
@@ -1347,7 +1370,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     paddingHorizontal: spacing["2xl"],
     paddingTop: PT,
-    paddingBottom: spacing["2xl"],
+    paddingBottom: spacing.xl,
   },
   heroBackBtn:  { marginBottom: spacing.xs, alignSelf: "flex-start" },
   heroBackTxt: {
@@ -1357,7 +1380,8 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize["2xl"],
     fontFamily: typography.fontFamily.extraBold,
     color: colors.white,
-    marginTop: spacing.xs,
+    marginTop: spacing.sm,
+    lineHeight: 26,
   },
   heroSub: {
     fontSize: typography.fontSize.sm,
@@ -1372,54 +1396,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing["2xl"],
     paddingTop: spacing["2xl"],
     paddingBottom: 16,
-    gap: spacing.xl,
+    gap: spacing["2xl"],
   },
 
-  // ── GPS card
-  gpsCard: {
-    flexDirection: "row", alignItems: "center", gap: spacing.md,
-    backgroundColor: colors.white,
-    borderRadius: radii.xl, padding: spacing.lg,
-    borderWidth: 1.5, borderColor: colors.border,
-    ...shadows.sm,
-  },
-  gpsCardFound:  { borderColor: `${colors.primary}50`, backgroundColor: `${colors.primary}08` },
-  gpsCardDenied: { borderColor: colors.border },
-  gpsIconOuter: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
-  gpsPulseRing: {
-    position: "absolute", width: 52, height: 52, borderRadius: 26,
-    borderWidth: 2, borderColor: colors.primary,
-  },
-  gpsIconWrap: {
-    width: 44, height: 44, borderRadius: 22,
-    backgroundColor: `${colors.primary}15`,
-    alignItems: "center", justifyContent: "center",
-  },
-  gpsIconWrapFound: { backgroundColor: colors.primary },
-  gpsEmoji:  { fontSize: 20 },
-  gpsLabel: {
-    fontSize: typography.fontSize.base,
-    fontFamily: typography.fontFamily.semiBold,
-    color: colors.textPrimary,
-  },
-  gpsLabelFound: { color: colors.primary },
-  gpsHint: {
-    fontSize: typography.fontSize.xs,
-    fontFamily: typography.fontFamily.regular,
-    color: colors.textMuted, marginTop: 2,
-  },
-  gpsRefresh: { fontSize: 20, color: colors.textMuted, fontFamily: typography.fontFamily.bold },
 
   // ── Fields
-  field:      { gap: spacing.sm },
+  field:      { gap: spacing.md },
   fieldLabel: {
-    fontSize: typography.fontSize.sm,
-    fontFamily: typography.fontFamily.semiBold,
-    color: colors.textSecondary,
+    fontSize: typography.fontSize.base,
+    fontFamily: typography.fontFamily.bold,
+    color: colors.textPrimary,
   },
   dot:       { color: colors.primary },
   fieldHint: {
-    fontSize: typography.fontSize.xs,
+    fontSize: typography.fontSize.sm,
     fontFamily: typography.fontFamily.regular,
     color: colors.textMuted,
   },
@@ -1427,43 +1417,44 @@ const styles = StyleSheet.create({
     flexDirection: "row", alignItems: "center", gap: spacing.md,
     backgroundColor: colors.white, borderRadius: radii.xl,
     borderWidth: 1.5, borderColor: colors.border,
-    paddingHorizontal: spacing.lg, paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.lg, paddingVertical: spacing.xl,
     ...shadows.sm,
   },
   cityBtnFilled:   { borderColor: `${colors.primary}50` },
-  cityIcon:        { fontSize: 20 },
+  cityBtnDisabled: { opacity: 0.45 },
+  cityIcon:        { fontSize: 22 },
   cityTxt: {
     flex: 1,
-    fontSize: typography.fontSize.lg,
+    fontSize: typography.fontSize.xl,
     fontFamily: typography.fontFamily.semiBold,
     color: colors.textPrimary,
   },
   cityPlaceholder: {
     color: colors.textMuted,
     fontFamily: typography.fontFamily.regular,
-    fontSize: typography.fontSize.base,
+    fontSize: typography.fontSize.lg,
   },
   chevronWrap: {
-    width: 28, height: 28, borderRadius: 14,
+    width: 32, height: 32, borderRadius: 16,
     backgroundColor: colors.surface,
     borderWidth: 1, borderColor: colors.border,
     alignItems: "center", justifyContent: "center",
   },
-  chevron: { fontSize: 10, color: colors.textMuted },
+  chevron: { fontSize: 11, color: colors.textMuted },
   cityCheckWrap: {
-    width: 28, height: 28, borderRadius: 14,
+    width: 32, height: 32, borderRadius: 16,
     backgroundColor: `${colors.primary}15`,
     borderWidth: 1, borderColor: `${colors.primary}40`,
     alignItems: "center", justifyContent: "center",
   },
   cityCheck: {
-    fontSize: 12, color: colors.primary, fontFamily: typography.fontFamily.bold,
+    fontSize: 14, color: colors.primary, fontFamily: typography.fontFamily.bold,
   },
   textInput: {
     backgroundColor: colors.white, borderWidth: 1.5, borderColor: colors.border,
     borderRadius: radii.xl,
-    paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
-    fontSize: typography.fontSize.base,
+    paddingHorizontal: spacing.lg, paddingVertical: spacing.lg,
+    fontSize: typography.fontSize.lg,
     fontFamily: typography.fontFamily.regular,
     color: colors.textPrimary,
   },
@@ -1953,6 +1944,12 @@ const styles = StyleSheet.create({
     fontFamily: typography.fontFamily.bold,
     color: colors.textPrimary,
   },
+  modalSubTitle: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.regular,
+    color: colors.textMuted,
+    marginTop: 2,
+  },
   modalCloseBtn: {
     width: 32, height: 32, borderRadius: 16,
     backgroundColor: colors.surface,
@@ -1968,18 +1965,18 @@ const styles = StyleSheet.create({
     flexDirection: "row", alignItems: "center", gap: spacing.sm,
     marginHorizontal: spacing["2xl"], marginVertical: spacing.md,
     backgroundColor: colors.surface, borderRadius: radii.xl,
-    borderWidth: 1, borderColor: colors.border,
-    paddingHorizontal: spacing.lg, paddingVertical: spacing.sm,
+    borderWidth: 1.5, borderColor: colors.border,
+    paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
   },
-  modalSearchIcon: { fontSize: 16 },
+  modalSearchIcon: { fontSize: 18 },
   modalSearchInput: {
     flex: 1,
-    fontSize: typography.fontSize.base,
+    fontSize: typography.fontSize.lg,
     fontFamily: typography.fontFamily.regular,
     color: colors.textPrimary, paddingVertical: spacing.xs,
   },
   modalClear: {
-    fontSize: typography.fontSize.sm, color: colors.textMuted,
+    fontSize: typography.fontSize.base, color: colors.textMuted,
     fontFamily: typography.fontFamily.bold, paddingHorizontal: spacing.xs,
   },
   modalEmpty:    { padding: spacing["2xl"], alignItems: "center" },
@@ -1990,15 +1987,15 @@ const styles = StyleSheet.create({
   },
   modalItem: {
     flexDirection: "row", alignItems: "center",
-    paddingHorizontal: spacing["2xl"], paddingVertical: spacing.lg,
+    paddingHorizontal: spacing["2xl"], paddingVertical: spacing.xl,
     gap: spacing.md,
     borderBottomWidth: 1, borderBottomColor: `${colors.border}60`,
   },
   modalItemPressed:  { backgroundColor: `${colors.primary}08` },
-  modalItemPin:      { fontSize: 16 },
+  modalItemPin:      { fontSize: 18 },
   modalItemTxt: {
     flex: 1,
-    fontSize: typography.fontSize.base,
+    fontSize: typography.fontSize.lg,
     fontFamily: typography.fontFamily.medium,
     color: colors.textPrimary,
   },

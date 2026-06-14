@@ -7,6 +7,7 @@ import {
   Pressable,
   ActivityIndicator,
   Platform,
+  Modal,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, { FadeInDown } from "react-native-reanimated";
@@ -26,6 +27,8 @@ export default function ConfirmScreen() {
   const { showToast } = useToast();
   const [places, setPlaces] = useState(() => Math.max(1, Number(placesParam) || 1));
 
+  const [payModal, setPayModal] = useState<null | "choice" | "cash">(null);
+
   const { data: voyage } = useVoyageDetail(voyage_id ?? "");
   const { mutateAsync: createReservation, isPending } = useCreateReservation();
 
@@ -37,14 +40,20 @@ export default function ConfirmScreen() {
     );
   }
 
-  const prixTotal = voyage.prix_par_place * places;
+  const prixTotal        = voyage.prix_par_place * places;
+  const fraisReservation = 200 * places;
+  const maxPlaces        = voyage.nombre_places_restantes;
 
   const handleConfirm = async () => {
     try {
       await createReservation({ voyage_id: voyage.id, nombre_places: places });
       showToast("Réservation envoyée ! En attente de confirmation du chauffeur.", "success");
       router.replace("/(client)/reservations" as any);
-    } catch (e) {
+    } catch (e: any) {
+      if (e?.response?.status === 402) {
+        setPayModal("choice");
+        return;
+      }
       const code = getErrorCode(e);
       if (code === "PLACES_INSUFFISANTES" || getErrorMessage(e).includes("insuffisantes")) {
         showToast("Plus assez de places disponibles.", "error");
@@ -54,7 +63,21 @@ export default function ConfirmScreen() {
     }
   };
 
-  const maxPlaces = voyage.nombre_places_restantes;
+  const handleCashConfirm = async () => {
+    try {
+      await createReservation({
+        voyage_id: voyage.id,
+        nombre_places: places,
+        modalite_paiement: "ESPECES",
+      });
+      setPayModal(null);
+      showToast("Réservation confirmée ! Payez le chauffeur lors du voyage.", "success");
+      router.replace("/(client)/reservations" as any);
+    } catch (e: any) {
+      setPayModal(null);
+      showToast(getErrorMessage(e), "error");
+    }
+  };
 
   return (
     <View style={styles.screen}>
@@ -203,6 +226,93 @@ export default function ConfirmScreen() {
           En confirmant, vous acceptez les conditions d'utilisation de GoTaxi.
         </Text>
       </View>
+
+      {/* ── Modal solde insuffisant ───────────────────────────────── */}
+      <Modal visible={payModal !== null} transparent animationType="fade" onRequestClose={() => setPayModal(null)}>
+        <View style={ms.overlay}>
+          <View style={ms.card}>
+
+            {/* Étape 1 : choix du mode */}
+            {payModal === "choice" && (
+              <>
+                <View style={ms.iconWrap}>
+                  <Text style={ms.iconEmoji}>💳</Text>
+                </View>
+                <Text style={ms.title}>Solde insuffisant</Text>
+                <Text style={ms.body}>
+                  Votre wallet GoTaxi ne dispose pas de fonds suffisants pour couvrir cette réservation.
+                </Text>
+                <View style={ms.amtRow}>
+                  <Text style={ms.amtLabel}>Montant requis</Text>
+                  <Text style={ms.amtVal}>{formatFCFA(prixTotal)}</Text>
+                </View>
+
+                <View style={ms.btnGroup}>
+                  <Pressable
+                    style={({ pressed }) => [ms.btnPrimary, pressed && { opacity: 0.85 }]}
+                    onPress={() => { setPayModal(null); router.push("/(client)/wallet/recharge" as any); }}
+                  >
+                    <Text style={ms.btnPrimaryTxt}>💳  Recharger mon wallet</Text>
+                  </Pressable>
+
+                  <Pressable
+                    style={({ pressed }) => [ms.btnSecondary, pressed && { opacity: 0.75 }]}
+                    onPress={() => setPayModal("cash")}
+                  >
+                    <Text style={ms.btnSecondaryTxt}>💵  Payer en espèces</Text>
+                  </Pressable>
+
+                  <Pressable onPress={() => setPayModal(null)} hitSlop={8}>
+                    <Text style={ms.cancelTxt}>Annuler</Text>
+                  </Pressable>
+                </View>
+              </>
+            )}
+
+            {/* Étape 2 : confirmation frais espèces */}
+            {payModal === "cash" && (
+              <>
+                <View style={[ms.iconWrap, ms.iconWrapCash]}>
+                  <Text style={ms.iconEmoji}>💵</Text>
+                </View>
+                <Text style={ms.title}>Paiement en espèces</Text>
+                <Text style={ms.body}>
+                  Vous réglez le chauffeur directement lors du voyage.{"\n\n"}
+                  Des <Text style={ms.bodyBold}>frais de réservation</Text> seront prélevés sur votre wallet pour confirmer votre engagement.
+                </Text>
+
+                <View style={ms.amtRow}>
+                  <View>
+                    <Text style={ms.amtLabel}>Frais de réservation</Text>
+                    <Text style={ms.amtHint}>200 FCFA × {places} place{places > 1 ? "s" : ""}</Text>
+                  </View>
+                  <Text style={ms.amtVal}>{formatFCFA(fraisReservation)}</Text>
+                </View>
+
+                <View style={ms.btnGroup}>
+                  <Pressable
+                    style={({ pressed }) => [ms.btnPrimary, isPending && { opacity: 0.7 }, pressed && { opacity: 0.85 }]}
+                    onPress={handleCashConfirm}
+                    disabled={isPending}
+                  >
+                    {isPending
+                      ? <ActivityIndicator color={colors.white} size="small" />
+                      : <Text style={ms.btnPrimaryTxt}>Confirmer · {formatFCFA(fraisReservation)}</Text>}
+                  </Pressable>
+
+                  <Pressable
+                    style={({ pressed }) => [ms.btnSecondary, pressed && { opacity: 0.75 }]}
+                    onPress={() => setPayModal("choice")}
+                  >
+                    <Text style={ms.btnSecondaryTxt}>← Retour</Text>
+                  </Pressable>
+                </View>
+              </>
+            )}
+
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -528,5 +638,78 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.xs,
     fontFamily: typography.fontFamily.regular,
     color: colors.textMuted,
+  },
+});
+
+// ── Modal styles ──────────────────────────────────────────────────────────────
+const ms = StyleSheet.create({
+  overlay: {
+    flex: 1, backgroundColor: "rgba(0,0,0,0.55)",
+    alignItems: "center", justifyContent: "center",
+    padding: spacing["2xl"],
+  },
+  card: {
+    backgroundColor: colors.white, borderRadius: radii["2xl"],
+    padding: spacing["3xl"], width: "100%", alignItems: "center",
+    gap: spacing.lg, ...shadows.lg,
+  },
+  iconWrap: {
+    width: 72, height: 72, borderRadius: 36,
+    backgroundColor: colors.errorBg,
+    alignItems: "center", justifyContent: "center",
+  },
+  iconWrapCash: { backgroundColor: colors.warningBg },
+  iconEmoji: { fontSize: 34 },
+  title: {
+    fontSize: typography.fontSize["2xl"],
+    fontFamily: typography.fontFamily.bold,
+    color: colors.textPrimary, textAlign: "center",
+  },
+  body: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.regular,
+    color: colors.textSecondary, textAlign: "center", lineHeight: 20,
+  },
+  bodyBold: { fontFamily: typography.fontFamily.bold, color: colors.textPrimary },
+  amtRow: {
+    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
+    width: "100%", backgroundColor: colors.surface,
+    borderRadius: radii.xl, padding: spacing.lg,
+    borderWidth: 1, borderColor: colors.border,
+  },
+  amtLabel: {
+    fontSize: typography.fontSize.sm, fontFamily: typography.fontFamily.medium,
+    color: colors.textSecondary,
+  },
+  amtHint: {
+    fontSize: typography.fontSize.xs, fontFamily: typography.fontFamily.regular,
+    color: colors.textMuted, marginTop: 2,
+  },
+  amtVal: {
+    fontSize: typography.fontSize.xl, fontFamily: typography.fontFamily.extraBold,
+    color: colors.primary,
+  },
+  btnGroup: { width: "100%", gap: spacing.md, alignItems: "center" },
+  btnPrimary: {
+    width: "100%", backgroundColor: colors.primary,
+    borderRadius: radii.full, paddingVertical: spacing.lg,
+    alignItems: "center", justifyContent: "center", minHeight: 52,
+  },
+  btnPrimaryTxt: {
+    fontSize: typography.fontSize.base, fontFamily: typography.fontFamily.bold,
+    color: colors.white,
+  },
+  btnSecondary: {
+    width: "100%", backgroundColor: colors.surface,
+    borderRadius: radii.full, paddingVertical: spacing.md,
+    alignItems: "center", borderWidth: 1, borderColor: colors.border,
+  },
+  btnSecondaryTxt: {
+    fontSize: typography.fontSize.base, fontFamily: typography.fontFamily.medium,
+    color: colors.textSecondary,
+  },
+  cancelTxt: {
+    fontSize: typography.fontSize.sm, fontFamily: typography.fontFamily.regular,
+    color: colors.textMuted, paddingVertical: spacing.xs,
   },
 });

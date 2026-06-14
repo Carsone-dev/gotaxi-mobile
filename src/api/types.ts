@@ -240,6 +240,7 @@ export interface Reservation {
 export interface ReservationCreatePayload {
   voyage_id: string;
   nombre_places: number;
+  modalite_paiement?: "WALLET" | "ESPECES";
 }
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
