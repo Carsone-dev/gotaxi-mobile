@@ -283,7 +283,7 @@ export default function PublishVoyageScreen() {
   }, [activeVehicules.length]);
 
   useEffect(() => {
-    if (selectedVehicule) setPlaces(selectedVehicule.nombre_places);
+    if (selectedVehicule) setPlaces(Math.min(selectedVehicule.nombre_places, 8));
   }, [vehiculeId]);
 
   // ── Date helpers ──
@@ -352,7 +352,7 @@ export default function PublishVoyageScreen() {
       case 2: return departure > new Date();
       case 3: {
         const n = Number(prix);
-        return !!prix && !isNaN(n) && n > 0;
+        return !!prix && !isNaN(n) && n >= 500;
       }
       case 4: return true;
       default: return false;
@@ -380,28 +380,33 @@ export default function PublishVoyageScreen() {
 
   const handlePublish = async () => {
     if (!gareDepart || !gareArrivee) return;
+    const payload = {
+      ville_depart: gareDepart.ville.nom,
+      ville_arrivee: gareArrivee.ville.nom,
+      point_depart: gareDepart.nom,
+      point_arrivee: gareArrivee.nom,
+      lat_depart: gareDepart.lat ?? 0,
+      lng_depart: gareDepart.lng ?? 0,
+      lat_arrivee: gareArrivee.lat ?? 0,
+      lng_arrivee: gareArrivee.lng ?? 0,
+      date_depart: departure.toISOString(),
+      prix_par_place: Number(prix),
+      nombre_places_total: Math.min(places, 8),
+      vehicule_id: vehiculeId,
+      accepte_colis: accepteColis,
+      climatise,
+      non_fumeur: nonFumeur,
+    };
     try {
-      await createVoyage({
-        ville_depart: gareDepart.ville.nom,
-        ville_arrivee: gareArrivee.ville.nom,
-        point_depart: gareDepart.nom,
-        point_arrivee: gareArrivee.nom,
-        lat_depart: gareDepart.lat ?? 0,
-        lng_depart: gareDepart.lng ?? 0,
-        lat_arrivee: gareArrivee.lat ?? 0,
-        lng_arrivee: gareArrivee.lng ?? 0,
-        date_depart: departure.toISOString(),
-        prix_par_place: Number(prix),
-        nombre_places_total: places,
-        vehicule_id: vehiculeId,
-        accepte_colis: accepteColis,
-        climatise,
-        non_fumeur: nonFumeur,
-      });
+      await createVoyage(payload);
       showToast("Trajet publié avec succès !", "success");
       router.back();
-    } catch (e) {
-      showToast(getErrorMessage(e), "error");
+    } catch (e: any) {
+      const detail = e?.response?.data?.detail;
+      const msg = Array.isArray(detail)
+        ? detail.map((d: any) => `${d.loc?.slice(-1)[0]}: ${d.msg}`).join("\n")
+        : detail ?? getErrorMessage(e);
+      showToast(msg, "error");
     }
   };
 
