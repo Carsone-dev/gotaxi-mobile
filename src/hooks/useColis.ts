@@ -87,3 +87,28 @@ export const useRefuserColis = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: [KEY] }),
   });
 };
+
+export const useInitierPaiementColis = () =>
+  useMutation({
+    mutationFn: ({ id, telephone }: { id: string; telephone: string }) =>
+      colisApi.initierPaiement(id, telephone),
+  });
+
+export const useStatutPaiementColis = (id: string, enabled: boolean) => {
+  const qc = useQueryClient();
+  return useQuery({
+    queryKey: [KEY, id, "statut-paiement"],
+    queryFn: () => colisApi.statutPaiement(id),
+    enabled: !!id && enabled,
+    refetchInterval: (query) => {
+      const statut = query.state.data?.statut;
+      if (statut === "confirme" || statut === "echec" || statut === "expire") return false;
+      return 5_000;
+    },
+    onSuccess: (data: any) => {
+      if (data.statut === "confirme") {
+        qc.invalidateQueries({ queryKey: [KEY, "me"] });
+      }
+    },
+  } as any);
+};

@@ -27,7 +27,7 @@ import Animated, {
 import { router } from "expo-router";
 import { colors, typography, spacing, radii, shadows } from "@/src/theme";
 import { useVilles } from "@/src/hooks/useGares";
-import type { ColisCategorie, ColisModalitePaiement } from "@/src/api/types";
+import type { ColisCategorie } from "@/src/api/types";
 
 // ── Données ───────────────────────────────────────────────────────────────────
 const CATEGORIES: { key: ColisCategorie; label: string; icon: string }[] = [
@@ -285,7 +285,6 @@ export default function NouveauColisScreen() {
   // Step 3
   const [destNom,   setDestNom]   = useState("");
   const [destTel,   setDestTel]   = useState("");
-  const [modalite,  setModalite]  = useState<ColisModalitePaiement>("A_LA_LIVRAISON");
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -364,7 +363,6 @@ export default function NouveauColisScreen() {
           fragile:                fragile ? "1" : "0",
           destinataire_nom:       destNom.trim(),
           destinataire_telephone: destTel.trim(),
-          modalite_paiement:      modalite,
           photo_uri:              photo || "",
         },
       });
@@ -723,37 +721,6 @@ export default function NouveauColisScreen() {
                       returnKeyType="done"
                     />
                     {errors.destTel ? <Text style={styles.fieldError}>{errors.destTel}</Text> : null}
-                  </View>
-
-                  {/* Paiement */}
-                  <View style={styles.fieldBlock}>
-                    <Text style={styles.fieldLabel}>
-                      <Text style={styles.fieldLabelDot}>● </Text>Quand souhaitez-vous payer ?
-                    </Text>
-                    <View style={styles.payRow}>
-                      <Pressable
-                        style={[styles.payCard, modalite === "A_LA_LIVRAISON" && styles.payCardActive]}
-                        onPress={() => setModalite("A_LA_LIVRAISON")}
-                      >
-                        {modalite === "A_LA_LIVRAISON" && <View style={styles.payCheck}><Text style={styles.payCheckText}>✓</Text></View>}
-                        <Text style={styles.payCardIcon}>📦</Text>
-                        <Text style={[styles.payCardLabel, modalite === "A_LA_LIVRAISON" && styles.payCardLabelActive]}>
-                          À la livraison
-                        </Text>
-                        <Text style={styles.payCardHint}>Payer quand le colis arrive</Text>
-                      </Pressable>
-                      <Pressable
-                        style={[styles.payCard, modalite === "A_LA_CONFIRMATION" && styles.payCardActive]}
-                        onPress={() => setModalite("A_LA_CONFIRMATION")}
-                      >
-                        {modalite === "A_LA_CONFIRMATION" && <View style={styles.payCheck}><Text style={styles.payCheckText}>✓</Text></View>}
-                        <Text style={styles.payCardIcon}>✅</Text>
-                        <Text style={[styles.payCardLabel, modalite === "A_LA_CONFIRMATION" && styles.payCardLabelActive]}>
-                          À la confirmation
-                        </Text>
-                        <Text style={styles.payCardHint}>Payer quand le chauffeur accepte</Text>
-                      </Pressable>
-                    </View>
                   </View>
 
                   {/* Mini recap */}

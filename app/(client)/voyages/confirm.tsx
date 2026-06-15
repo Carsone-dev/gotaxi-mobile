@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -8,29 +8,45 @@ import {
   ActivityIndicator,
   Platform,
   Modal,
+  TextInput,
+  KeyboardAvoidingView,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Animated, { FadeInDown } from "react-native-reanimated";
+import Animated, { FadeInDown, FadeIn } from "react-native-reanimated";
 import { router, useLocalSearchParams } from "expo-router";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import { useVoyageDetail } from "@/src/hooks/useVoyages";
-import { useCreateReservation } from "@/src/hooks/useReservations";
+import { useCreateReservation, useInitierPaiementReservation } from "@/src/hooks/useReservations";
+import { reservationsApi } from "@/src/api/endpoints/reservations";
+import { useAuthStore } from "@/src/stores/authStore";
 import { formatFCFA, formatTime } from "@/src/utils/formatters";
-import { getErrorCode, getErrorMessage } from "@/src/utils/error-handler";
+import { getErrorMessage } from "@/src/utils/error-handler";
 import { useToast } from "@/src/components/common/Toast";
 import { colors, typography, spacing, radii, shadows } from "@/src/theme";
 
+type PayStep = "phone" | "waiting" | "success" | "error";
+
 export default function ConfirmScreen() {
-  const insets = useSafeAreaInsets();
   const { voyage_id, places: placesParam } = useLocalSearchParams<{ voyage_id: string; places?: string }>();
   const { showToast } = useToast();
-  const [places, setPlaces] = useState(() => Math.max(1, Number(placesParam) || 1));
+  const user = useAuthStore((s) => s.user);
 
-  const [payModal, setPayModal] = useState<null | "choice" | "cash">(null);
+  const [places, setPlaces] = useState(() => Math.max(1, Number(placesParam) || 1));
+  const [reservationId, setReservationId] = useState<string | null>(null);
+  const [payModal, setPayModal] = useState(false);
+  const [payStep, setPayStep] = useState<PayStep>("phone");
+  const [telephone, setTelephone] = useState(user?.telephone ?? "");
+  const [payError, setPayError] = useState("");
+
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const { data: voyage } = useVoyageDetail(voyage_id ?? "");
-  const { mutateAsync: createReservation, isPending } = useCreateReservation();
+  const { mutateAsync: createReservation, isPending: creating } = useCreateReservation();
+  const { mutateAsync: initierPaiement, isPending: initiating } = useInitierPaiementReservation();
+
+  useEffect(() => {
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, []);
 
   if (!voyage) {
     return (
@@ -40,53 +56,73 @@ export default function ConfirmScreen() {
     );
   }
 
-  const prixTotal        = voyage.prix_par_place * places;
-  const fraisReservation = 200 * places;
-  const maxPlaces        = voyage.nombre_places_restantes;
+  const prixTotal = voyage.prix_par_place * places;
+  const fraisPlateforme = 200 * places;
+  const maxPlaces = voyage.nombre_places_restantes;
 
-  const handleConfirm = async () => {
+  const handleReserver = async () => {
     try {
-      await createReservation({ voyage_id: voyage.id, nombre_places: places });
-      showToast("Réservation envoyée ! En attente de confirmation du chauffeur.", "success");
-      router.replace("/(client)/reservations" as any);
-    } catch (e: any) {
-      if (e?.response?.status === 402) {
-        setPayModal("choice");
-        return;
-      }
-      const code = getErrorCode(e);
-      if (code === "PLACES_INSUFFISANTES" || getErrorMessage(e).includes("insuffisantes")) {
-        showToast("Plus assez de places disponibles.", "error");
-      } else {
-        showToast(getErrorMessage(e), "error");
-      }
-    }
-  };
-
-  const handleCashConfirm = async () => {
-    try {
-      await createReservation({
-        voyage_id: voyage.id,
-        nombre_places: places,
-        modalite_paiement: "ESPECES",
-      });
-      setPayModal(null);
-      showToast("Réservation confirmée ! Payez le chauffeur lors du voyage.", "success");
-      router.replace("/(client)/reservations" as any);
-    } catch (e: any) {
-      setPayModal(null);
+      const resa = await createReservation({ voyage_id: voyage.id, nombre_places: places });
+      setReservationId(resa.id);
+      setTelephone(user?.telephone ?? "");
+      setPayStep("phone");
+      setPayError("");
+      setPayModal(true);
+    } catch (e) {
       showToast(getErrorMessage(e), "error");
     }
   };
 
+  const startPolling = (id: string) => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    pollRef.current = setInterval(async () => {
+      try {
+        const result = await reservationsApi.statutPaiement(id);
+        if (result.statut === "confirme") {
+          clearInterval(pollRef.current!);
+          setPayStep("success");
+          setTimeout(() => {
+            setPayModal(false);
+            router.replace("/(client)/reservations" as any);
+          }, 1800);
+        } else if (result.statut === "echec" || result.statut === "expire") {
+          clearInterval(pollRef.current!);
+          setPayError(result.statut === "expire" ? "Le délai de paiement a expiré." : "Le paiement a échoué.");
+          setPayStep("error");
+        }
+      } catch {
+        // ignore network errors during polling
+      }
+    }, 5_000);
+  };
+
+  const handlePayer = async () => {
+    if (!reservationId) return;
+    if (!telephone.trim()) {
+      setPayError("Entrez votre numéro Mobile Money.");
+      return;
+    }
+    setPayError("");
+    try {
+      await initierPaiement({ id: reservationId, telephone: telephone.trim() });
+      setPayStep("waiting");
+      startPolling(reservationId);
+    } catch (e) {
+      setPayError(getErrorMessage(e));
+    }
+  };
+
+  const handleAnnulerPaiement = () => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    setPayModal(false);
+    showToast("Réservation annulée.", "info");
+  };
+
   return (
     <View style={styles.screen}>
-      {/* ── Header fixe ──────────────────────────────────────────── */}
+      {/* ── Header ── */}
       <View style={styles.header}>
-        <Pressable
-          onPress={() => router.back()}
-          style={({ pressed }) => [styles.backBtn, pressed && { opacity: 0.7 }]}
-        >
+        <Pressable onPress={() => router.back()} style={styles.backBtn}>
           <Text style={styles.backIcon}>‹</Text>
         </Pressable>
         <View style={styles.headerCenter}>
@@ -95,16 +131,12 @@ export default function ConfirmScreen() {
         </View>
       </View>
 
-      {/* ── Contenu scrollable ───────────────────────────────────── */}
-      <ScrollView
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* ── Carte trajet ──────────── */}
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+
+        {/* ── Carte trajet ── */}
         <Animated.View entering={FadeInDown.duration(280)} style={styles.routeCard}>
           <View style={styles.routeAccent} />
           <View style={styles.routeBody}>
-            {/* Timeline horizontal */}
             <View style={styles.routeTimeline}>
               <View style={[styles.rtDot, styles.rtDotStart]} />
               <View style={styles.rtLine} />
@@ -115,8 +147,6 @@ export default function ConfirmScreen() {
               <View style={{ flex: 1 }} />
               <Text style={styles.routeCity}>{voyage.ville_arrivee}</Text>
             </View>
-
-            {/* Grande heure + date */}
             <View style={styles.routeMeta}>
               <Text style={styles.departTime}>{formatTime(voyage.date_depart)}</Text>
               <View style={styles.dateBadge}>
@@ -125,47 +155,33 @@ export default function ConfirmScreen() {
                 </Text>
               </View>
             </View>
-
-            {/* Point de départ */}
             {voyage.point_depart ? (
               <View style={styles.pointRow}>
-                <View style={styles.pointIconWrap}>
-                  <Text style={styles.pointIconTxt}>📍</Text>
-                </View>
+                <Text style={styles.pointIconTxt}>📍</Text>
                 <Text style={styles.pointTxt} numberOfLines={2}>{voyage.point_depart}</Text>
               </View>
             ) : null}
           </View>
         </Animated.View>
 
-        {/* ── Nombre de places ──────── */}
+        {/* ── Nombre de places ── */}
         <Animated.View entering={FadeInDown.duration(280).delay(80)} style={styles.card}>
           <Text style={styles.cardLabel}>Nombre de places</Text>
           <View style={styles.counter}>
             <Pressable
               onPress={() => setPlaces((p) => Math.max(1, p - 1))}
-              style={({ pressed }) => [
-                styles.counterBtn,
-                places <= 1 && styles.counterBtnDisabled,
-                pressed && { opacity: 0.7 },
-              ]}
+              style={[styles.counterBtn, places <= 1 && styles.counterBtnDisabled]}
               disabled={places <= 1}
             >
               <Text style={[styles.counterBtnTxt, places <= 1 && styles.counterBtnTxtDisabled]}>−</Text>
             </Pressable>
-
             <View style={styles.counterValue}>
               <Text style={styles.counterNum}>{places}</Text>
               <Text style={styles.counterSub}>place{places > 1 ? "s" : ""}</Text>
             </View>
-
             <Pressable
               onPress={() => setPlaces((p) => Math.min(maxPlaces, p + 1))}
-              style={({ pressed }) => [
-                styles.counterBtn,
-                places >= maxPlaces && styles.counterBtnDisabled,
-                pressed && { opacity: 0.7 },
-              ]}
+              style={[styles.counterBtn, places >= maxPlaces && styles.counterBtnDisabled]}
               disabled={places >= maxPlaces}
             >
               <Text style={[styles.counterBtnTxt, places >= maxPlaces && styles.counterBtnTxtDisabled]}>+</Text>
@@ -176,49 +192,47 @@ export default function ConfirmScreen() {
           </Text>
         </Animated.View>
 
-        {/* ── Détail du prix ────────── */}
+        {/* ── Détail du prix ── */}
         <Animated.View entering={FadeInDown.duration(280).delay(160)} style={styles.card}>
           <Text style={styles.cardLabel}>Détail du prix</Text>
           <View style={styles.priceRow}>
-            <Text style={styles.priceLabel}>
-              {formatFCFA(voyage.prix_par_place)} × {places} place{places > 1 ? "s" : ""}
-            </Text>
+            <Text style={styles.priceLabel}>Transport ({formatFCFA(voyage.prix_par_place)} × {places})</Text>
             <Text style={styles.priceAmt}>{formatFCFA(prixTotal)}</Text>
+          </View>
+          <View style={styles.priceRow}>
+            <Text style={styles.priceLabel}>Frais GoTaxi (200 FCFA × {places})</Text>
+            <Text style={[styles.priceAmt, { color: colors.primary }]}>{formatFCFA(fraisPlateforme)}</Text>
           </View>
           <View style={styles.priceDiv} />
           <View style={styles.priceTotalRow}>
-            <Text style={styles.priceTotalLabel}>Total à payer</Text>
-            <Text style={styles.priceTotalAmt}>{formatFCFA(prixTotal)}</Text>
+            <Text style={styles.priceTotalLabel}>Frais à payer maintenant</Text>
+            <Text style={styles.priceTotalAmt}>{formatFCFA(fraisPlateforme)}</Text>
           </View>
         </Animated.View>
 
-        {/* ── Note info ─────────────── */}
+        {/* ── Info ── */}
         <Animated.View entering={FadeInDown.duration(280).delay(240)} style={styles.infoNote}>
-          <View style={styles.infoNoteIconWrap}>
-            <Text style={styles.infoNoteIcon}>ℹ️</Text>
-          </View>
+          <Text style={styles.infoNoteIcon}>ℹ️</Text>
           <Text style={styles.infoNoteTxt}>
-            Votre réservation sera en attente jusqu'à confirmation du chauffeur.
-            Le paiement se fait directement lors du voyage.
+            Les frais GoTaxi ({formatFCFA(fraisPlateforme)}) sont payés par Mobile Money maintenant.
+            Le transport ({formatFCFA(prixTotal)}) se règle directement avec le chauffeur.
           </Text>
         </Animated.View>
+
       </ScrollView>
 
-      {/* ── Footer fixe ──────────────────────────────────────────── */}
+      {/* ── Footer ── */}
       <View style={styles.footer}>
         <Pressable
-          style={({ pressed }) => [styles.confirmBtn, isPending && { opacity: 0.8 }, pressed && { opacity: 0.85 }]}
-          onPress={handleConfirm}
-          disabled={isPending}
+          style={[styles.confirmBtn, creating && { opacity: 0.8 }]}
+          onPress={handleReserver}
+          disabled={creating}
         >
-          {isPending ? (
+          {creating ? (
             <ActivityIndicator color={colors.white} size="small" />
           ) : (
             <>
-              <Text style={styles.confirmBtnTxt}>Confirmer la réservation</Text>
-              <View style={styles.confirmBtnPrice}>
-                <Text style={styles.confirmBtnPriceTxt}>{formatFCFA(prixTotal)}</Text>
-              </View>
+              <Text style={styles.confirmBtnTxt}>Réserver · Payer {formatFCFA(fraisPlateforme)}</Text>
             </>
           )}
         </Pressable>
@@ -227,102 +241,123 @@ export default function ConfirmScreen() {
         </Text>
       </View>
 
-      {/* ── Modal solde insuffisant ───────────────────────────────── */}
-      <Modal visible={payModal !== null} transparent animationType="fade" onRequestClose={() => setPayModal(null)}>
-        <View style={ms.overlay}>
-          <View style={ms.card}>
+      {/* ── Modal paiement FedaPay ── */}
+      <Modal visible={payModal} transparent animationType="fade" onRequestClose={handleAnnulerPaiement}>
+        <KeyboardAvoidingView style={ms.kav} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+          <View style={ms.overlay}>
+            <View style={ms.card}>
 
-            {/* Étape 1 : choix du mode */}
-            {payModal === "choice" && (
-              <>
-                <View style={ms.iconWrap}>
-                  <Text style={ms.iconEmoji}>💳</Text>
-                </View>
-                <Text style={ms.title}>Solde insuffisant</Text>
-                <Text style={ms.body}>
-                  Votre wallet GoTaxi ne dispose pas de fonds suffisants pour couvrir cette réservation.
-                </Text>
-                <View style={ms.amtRow}>
-                  <Text style={ms.amtLabel}>Montant requis</Text>
-                  <Text style={ms.amtVal}>{formatFCFA(prixTotal)}</Text>
-                </View>
-
-                <View style={ms.btnGroup}>
-                  <Pressable
-                    style={({ pressed }) => [ms.btnPrimary, pressed && { opacity: 0.85 }]}
-                    onPress={() => { setPayModal(null); router.push("/(client)/wallet/recharge" as any); }}
-                  >
-                    <Text style={ms.btnPrimaryTxt}>💳  Recharger mon wallet</Text>
-                  </Pressable>
-
-                  <Pressable
-                    style={({ pressed }) => [ms.btnSecondary, pressed && { opacity: 0.75 }]}
-                    onPress={() => setPayModal("cash")}
-                  >
-                    <Text style={ms.btnSecondaryTxt}>💵  Payer en espèces</Text>
-                  </Pressable>
-
-                  <Pressable onPress={() => setPayModal(null)} hitSlop={8}>
-                    <Text style={ms.cancelTxt}>Annuler</Text>
-                  </Pressable>
-                </View>
-              </>
-            )}
-
-            {/* Étape 2 : confirmation frais espèces */}
-            {payModal === "cash" && (
-              <>
-                <View style={[ms.iconWrap, ms.iconWrapCash]}>
-                  <Text style={ms.iconEmoji}>💵</Text>
-                </View>
-                <Text style={ms.title}>Paiement en espèces</Text>
-                <Text style={ms.body}>
-                  Vous réglez le chauffeur directement lors du voyage.{"\n\n"}
-                  Des <Text style={ms.bodyBold}>frais de réservation</Text> seront prélevés sur votre wallet pour confirmer votre engagement.
-                </Text>
-
-                <View style={ms.amtRow}>
-                  <View>
-                    <Text style={ms.amtLabel}>Frais de réservation</Text>
-                    <Text style={ms.amtHint}>200 FCFA × {places} place{places > 1 ? "s" : ""}</Text>
+              {/* ─ Étape : saisie téléphone ─ */}
+              {payStep === "phone" && (
+                <>
+                  <View style={ms.iconWrap}>
+                    <Text style={ms.iconEmoji}>📱</Text>
                   </View>
-                  <Text style={ms.amtVal}>{formatFCFA(fraisReservation)}</Text>
-                </View>
+                  <Text style={ms.title}>Payer les frais GoTaxi</Text>
+                  <Text style={ms.body}>
+                    Entrez votre numéro Mobile Money (MTN ou Moov).{"\n"}
+                    Vous recevrez une demande de confirmation USSD.
+                  </Text>
+                  <View style={ms.amtRow}>
+                    <Text style={ms.amtLabel}>Frais de mise en relation</Text>
+                    <Text style={ms.amtVal}>{formatFCFA(fraisPlateforme)}</Text>
+                  </View>
+                  <TextInput
+                    style={ms.phoneInput}
+                    value={telephone}
+                    onChangeText={(t) => { setTelephone(t); setPayError(""); }}
+                    placeholder="+229 97 00 00 00"
+                    placeholderTextColor={colors.textMuted}
+                    keyboardType="phone-pad"
+                    returnKeyType="done"
+                    autoFocus
+                  />
+                  {payError ? <Text style={ms.errorTxt}>{payError}</Text> : null}
+                  <View style={ms.btnGroup}>
+                    <Pressable
+                      style={[ms.btnPrimary, initiating && { opacity: 0.7 }]}
+                      onPress={handlePayer}
+                      disabled={initiating}
+                    >
+                      {initiating
+                        ? <ActivityIndicator color={colors.white} size="small" />
+                        : <Text style={ms.btnPrimaryTxt}>Payer {formatFCFA(fraisPlateforme)}</Text>}
+                    </Pressable>
+                    <Pressable onPress={handleAnnulerPaiement} hitSlop={8}>
+                      <Text style={ms.cancelTxt}>Annuler la réservation</Text>
+                    </Pressable>
+                  </View>
+                </>
+              )}
 
-                <View style={ms.btnGroup}>
-                  <Pressable
-                    style={({ pressed }) => [ms.btnPrimary, isPending && { opacity: 0.7 }, pressed && { opacity: 0.85 }]}
-                    onPress={handleCashConfirm}
-                    disabled={isPending}
-                  >
-                    {isPending
-                      ? <ActivityIndicator color={colors.white} size="small" />
-                      : <Text style={ms.btnPrimaryTxt}>Confirmer · {formatFCFA(fraisReservation)}</Text>}
-                  </Pressable>
+              {/* ─ Étape : en attente USSD ─ */}
+              {payStep === "waiting" && (
+                <>
+                  <View style={[ms.iconWrap, ms.iconWrapWaiting]}>
+                    <ActivityIndicator color={colors.primary} size="large" />
+                  </View>
+                  <Text style={ms.title}>En attente de paiement</Text>
+                  <Text style={ms.body}>
+                    Confirmez la demande de paiement USSD sur votre téléphone{"\n"}
+                    <Text style={{ fontFamily: typography.fontFamily.bold }}>{telephone}</Text>
+                  </Text>
+                  <View style={ms.waitingHint}>
+                    <Text style={ms.waitingHintIcon}>💡</Text>
+                    <Text style={ms.waitingHintText}>
+                      Une notification USSD est envoyée sur votre téléphone. Composez *126*1# si vous ne la recevez pas.
+                    </Text>
+                  </View>
+                </>
+              )}
 
-                  <Pressable
-                    style={({ pressed }) => [ms.btnSecondary, pressed && { opacity: 0.75 }]}
-                    onPress={() => setPayModal("choice")}
-                  >
-                    <Text style={ms.btnSecondaryTxt}>← Retour</Text>
-                  </Pressable>
-                </View>
-              </>
-            )}
+              {/* ─ Étape : succès ─ */}
+              {payStep === "success" && (
+                <Animated.View entering={FadeIn.duration(300)} style={ms.successWrap}>
+                  <View style={[ms.iconWrap, ms.iconWrapSuccess]}>
+                    <Text style={ms.iconEmoji}>✅</Text>
+                  </View>
+                  <Text style={ms.title}>Paiement confirmé !</Text>
+                  <Text style={ms.body}>
+                    Votre réservation est enregistrée.{"\n"}Le chauffeur va confirmer votre place.
+                  </Text>
+                </Animated.View>
+              )}
 
+              {/* ─ Étape : erreur ─ */}
+              {payStep === "error" && (
+                <>
+                  <View style={[ms.iconWrap, ms.iconWrapError]}>
+                    <Text style={ms.iconEmoji}>❌</Text>
+                  </View>
+                  <Text style={ms.title}>Paiement échoué</Text>
+                  <Text style={ms.body}>{payError}</Text>
+                  <View style={ms.btnGroup}>
+                    <Pressable
+                      style={ms.btnPrimary}
+                      onPress={() => { setPayStep("phone"); setPayError(""); }}
+                    >
+                      <Text style={ms.btnPrimaryTxt}>Réessayer</Text>
+                    </Pressable>
+                    <Pressable onPress={handleAnnulerPaiement} hitSlop={8}>
+                      <Text style={ms.cancelTxt}>Annuler</Text>
+                    </Pressable>
+                  </View>
+                </>
+              )}
+
+            </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
 }
 
-// ── Styles ────────────────────────────────────────────────────────────────────
+// ── Styles principaux ─────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.surface },
   centered: { flex: 1, alignItems: "center", justifyContent: "center" },
 
-  // Header
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -336,313 +371,106 @@ const styles = StyleSheet.create({
     ...shadows.sm,
   },
   backBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 36, height: 36, borderRadius: 18,
     backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: "center",
-    justifyContent: "center",
+    borderWidth: 1, borderColor: colors.border,
+    alignItems: "center", justifyContent: "center",
   },
-  backIcon: {
-    fontSize: 22,
-    color: colors.textPrimary,
-    fontFamily: typography.fontFamily.bold,
-    lineHeight: 26,
-    marginTop: -1,
-  },
+  backIcon: { fontSize: 22, color: colors.textPrimary, fontFamily: typography.fontFamily.bold, lineHeight: 26, marginTop: -1 },
   headerCenter: { flex: 1 },
-  headerTitle: {
-    fontSize: typography.fontSize.lg,
-    fontFamily: typography.fontFamily.bold,
-    color: colors.textPrimary,
-  },
-  headerSub: {
-    fontSize: typography.fontSize.xs,
-    fontFamily: typography.fontFamily.regular,
-    color: colors.textMuted,
-  },
+  headerTitle: { fontSize: typography.fontSize.lg, fontFamily: typography.fontFamily.bold, color: colors.textPrimary },
+  headerSub: { fontSize: typography.fontSize.xs, fontFamily: typography.fontFamily.regular, color: colors.textMuted },
 
-  // Scroll
-  content: {
-    padding: spacing["2xl"],
-    paddingBottom: 140,
-    gap: spacing.lg,
-  },
+  content: { padding: spacing["2xl"], paddingBottom: 140, gap: spacing.lg },
 
-  // Route card
   routeCard: {
-    backgroundColor: colors.white,
-    borderRadius: radii["2xl"],
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: colors.border,
-    ...shadows.sm,
+    backgroundColor: colors.white, borderRadius: radii["2xl"],
+    overflow: "hidden", borderWidth: 1, borderColor: colors.border, ...shadows.sm,
   },
-  routeAccent: {
-    height: 5,
-    backgroundColor: colors.primary,
-  },
-  routeBody: {
-    padding: spacing["2xl"],
-    gap: spacing.lg,
-  },
-  routeTimeline: {
-    flexDirection: "row",
-    alignItems: "center",
-    height: 14,
-  },
-  rtDot: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    borderWidth: 2,
-    borderColor: colors.white,
-    zIndex: 1,
-  },
+  routeAccent: { height: 5, backgroundColor: colors.primary },
+  routeBody: { padding: spacing["2xl"], gap: spacing.lg },
+  routeTimeline: { flexDirection: "row", alignItems: "center", height: 14 },
+  rtDot: { width: 14, height: 14, borderRadius: 7, borderWidth: 2, borderColor: colors.white, zIndex: 1 },
   rtDotStart: { backgroundColor: colors.primary },
   rtDotEnd:   { backgroundColor: colors.black },
-  rtLine: {
-    flex: 1,
-    height: 2,
-    backgroundColor: colors.border,
-  },
-  routeCities: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: -spacing.xs,
-  },
-  routeCity: {
-    fontSize: typography.fontSize.xl,
-    fontFamily: typography.fontFamily.bold,
-    color: colors.textPrimary,
-  },
+  rtLine: { flex: 1, height: 2, backgroundColor: colors.border },
+  routeCities: { flexDirection: "row", alignItems: "center", marginTop: -spacing.xs },
+  routeCity: { fontSize: typography.fontSize.xl, fontFamily: typography.fontFamily.bold, color: colors.textPrimary },
   routeMeta: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingTop: spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.border,
   },
-  departTime: {
-    fontSize: typography.fontSize["4xl"],
-    fontFamily: typography.fontFamily.extraBold,
-    color: colors.textPrimary,
-    lineHeight: 36,
-  },
+  departTime: { fontSize: typography.fontSize["4xl"], fontFamily: typography.fontFamily.extraBold, color: colors.textPrimary, lineHeight: 36 },
   dateBadge: {
-    backgroundColor: colors.surface,
-    borderRadius: radii.full,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 5,
-    borderWidth: 1,
-    borderColor: colors.border,
+    backgroundColor: colors.surface, borderRadius: radii.full,
+    paddingHorizontal: spacing.md, paddingVertical: 5,
+    borderWidth: 1, borderColor: colors.border,
   },
-  dateBadgeTxt: {
-    fontSize: typography.fontSize.xs,
-    fontFamily: typography.fontFamily.medium,
-    color: colors.textSecondary,
-    textTransform: "capitalize",
-  },
-  pointRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-  },
-  pointIconWrap: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: colors.surface,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
+  dateBadgeTxt: { fontSize: typography.fontSize.xs, fontFamily: typography.fontFamily.medium, color: colors.textSecondary, textTransform: "capitalize" },
+  pointRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   pointIconTxt: { fontSize: 13 },
-  pointTxt: {
-    flex: 1,
-    fontSize: typography.fontSize.sm,
-    fontFamily: typography.fontFamily.regular,
-    color: colors.textSecondary,
-  },
+  pointTxt: { flex: 1, fontSize: typography.fontSize.sm, fontFamily: typography.fontFamily.regular, color: colors.textSecondary },
 
-  // Cards génériques
   card: {
-    backgroundColor: colors.white,
-    borderRadius: radii["2xl"],
-    padding: spacing["2xl"],
-    gap: spacing.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    ...shadows.sm,
+    backgroundColor: colors.white, borderRadius: radii["2xl"],
+    padding: spacing["2xl"], gap: spacing.lg,
+    borderWidth: 1, borderColor: colors.border, ...shadows.sm,
   },
   cardLabel: {
-    fontSize: typography.fontSize.xs,
-    fontFamily: typography.fontFamily.bold,
-    color: colors.textMuted,
-    textTransform: "uppercase",
-    letterSpacing: 1,
+    fontSize: typography.fontSize.xs, fontFamily: typography.fontFamily.bold,
+    color: colors.textMuted, textTransform: "uppercase", letterSpacing: 1,
   },
 
-  // Counter
-  counter: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
+  counter: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   counterBtn: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: "center",
-    justifyContent: "center",
+    width: 48, height: 48, borderRadius: 24,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
+    alignItems: "center", justifyContent: "center",
   },
   counterBtnDisabled: { opacity: 0.4 },
-  counterBtnTxt: {
-    fontSize: typography.fontSize["2xl"],
-    fontFamily: typography.fontFamily.bold,
-    color: colors.textPrimary,
-    lineHeight: 28,
-  },
+  counterBtnTxt: { fontSize: typography.fontSize["2xl"], fontFamily: typography.fontFamily.bold, color: colors.textPrimary, lineHeight: 28 },
   counterBtnTxtDisabled: { color: colors.textMuted },
   counterValue: { alignItems: "center", gap: 2 },
-  counterNum: {
-    fontSize: typography.fontSize["5xl"],
-    fontFamily: typography.fontFamily.extraBold,
-    color: colors.textPrimary,
-    lineHeight: 38,
-  },
-  counterSub: {
-    fontSize: typography.fontSize.sm,
-    fontFamily: typography.fontFamily.regular,
-    color: colors.textMuted,
-  },
-  placesAvail: {
-    fontSize: typography.fontSize.sm,
-    fontFamily: typography.fontFamily.regular,
-    color: colors.textMuted,
-    textAlign: "center",
-  },
+  counterNum: { fontSize: typography.fontSize["5xl"], fontFamily: typography.fontFamily.extraBold, color: colors.textPrimary, lineHeight: 38 },
+  counterSub: { fontSize: typography.fontSize.sm, fontFamily: typography.fontFamily.regular, color: colors.textMuted },
+  placesAvail: { fontSize: typography.fontSize.sm, fontFamily: typography.fontFamily.regular, color: colors.textMuted, textAlign: "center" },
 
-  // Prix
-  priceRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  priceLabel: {
-    fontSize: typography.fontSize.base,
-    fontFamily: typography.fontFamily.regular,
-    color: colors.textSecondary,
-  },
-  priceAmt: {
-    fontSize: typography.fontSize.base,
-    fontFamily: typography.fontFamily.semiBold,
-    color: colors.textPrimary,
-  },
+  priceRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  priceLabel: { fontSize: typography.fontSize.sm, fontFamily: typography.fontFamily.regular, color: colors.textSecondary },
+  priceAmt: { fontSize: typography.fontSize.base, fontFamily: typography.fontFamily.semiBold, color: colors.textPrimary },
   priceDiv: { height: 1, backgroundColor: colors.border },
-  priceTotalRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  priceTotalLabel: {
-    fontSize: typography.fontSize.lg,
-    fontFamily: typography.fontFamily.bold,
-    color: colors.textPrimary,
-  },
-  priceTotalAmt: {
-    fontSize: typography.fontSize["2xl"],
-    fontFamily: typography.fontFamily.extraBold,
-    color: colors.primary,
-  },
+  priceTotalRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  priceTotalLabel: { fontSize: typography.fontSize.lg, fontFamily: typography.fontFamily.bold, color: colors.textPrimary },
+  priceTotalAmt: { fontSize: typography.fontSize["2xl"], fontFamily: typography.fontFamily.extraBold, color: colors.primary },
 
-  // Note info
   infoNote: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: spacing.md,
-    backgroundColor: colors.infoBg,
-    borderRadius: radii.xl,
-    padding: spacing.lg,
-    borderWidth: 1,
-    borderColor: `${colors.info}20`,
-  },
-  infoNoteIconWrap: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: `${colors.info}18`,
-    alignItems: "center",
-    justifyContent: "center",
-    flexShrink: 0,
+    flexDirection: "row", alignItems: "flex-start", gap: spacing.md,
+    backgroundColor: colors.infoBg, borderRadius: radii.xl, padding: spacing.lg,
+    borderWidth: 1, borderColor: `${colors.info}20`,
   },
   infoNoteIcon: { fontSize: 15 },
-  infoNoteTxt: {
-    flex: 1,
-    fontSize: typography.fontSize.sm,
-    fontFamily: typography.fontFamily.regular,
-    color: colors.info,
-    lineHeight: 20,
-  },
+  infoNoteTxt: { flex: 1, fontSize: typography.fontSize.sm, fontFamily: typography.fontFamily.regular, color: colors.info, lineHeight: 20 },
 
-  // Footer
   footer: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
+    position: "absolute", bottom: 0, left: 0, right: 0,
     backgroundColor: colors.white,
-    paddingHorizontal: spacing["2xl"],
-    paddingTop: spacing.xl,
+    paddingHorizontal: spacing["2xl"], paddingTop: spacing.xl,
     paddingBottom: Platform.OS === "ios" ? 40 : 28,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    gap: spacing.sm,
-    ...shadows.lg,
+    borderTopWidth: 1, borderTopColor: colors.border,
+    gap: spacing.sm, ...shadows.lg,
   },
   confirmBtn: {
-    backgroundColor: colors.primary,
-    borderRadius: radii.full,
-    paddingVertical: spacing.lg,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: spacing.md,
-    minHeight: 52,
+    backgroundColor: colors.primary, borderRadius: radii.full,
+    paddingVertical: spacing.lg, flexDirection: "row",
+    alignItems: "center", justifyContent: "center", gap: spacing.md, minHeight: 52,
   },
-  confirmBtnTxt: {
-    fontSize: typography.fontSize.base,
-    fontFamily: typography.fontFamily.bold,
-    color: colors.white,
-  },
-  confirmBtnPrice: {
-    backgroundColor: "rgba(255,255,255,0.2)",
-    borderRadius: radii.full,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 3,
-  },
-  confirmBtnPriceTxt: {
-    fontSize: typography.fontSize.sm,
-    fontFamily: typography.fontFamily.bold,
-    color: colors.white,
-  },
-  footerHint: {
-    textAlign: "center",
-    fontSize: typography.fontSize.xs,
-    fontFamily: typography.fontFamily.regular,
-    color: colors.textMuted,
-  },
+  confirmBtnTxt: { fontSize: typography.fontSize.base, fontFamily: typography.fontFamily.bold, color: colors.white },
+  footerHint: { textAlign: "center", fontSize: typography.fontSize.xs, fontFamily: typography.fontFamily.regular, color: colors.textMuted },
 });
 
-// ── Modal styles ──────────────────────────────────────────────────────────────
+// ── Styles modal ──────────────────────────────────────────────────────────────
 const ms = StyleSheet.create({
+  kav: { flex: 1 },
   overlay: {
     flex: 1, backgroundColor: "rgba(0,0,0,0.55)",
     alignItems: "center", justifyContent: "center",
@@ -655,61 +483,54 @@ const ms = StyleSheet.create({
   },
   iconWrap: {
     width: 72, height: 72, borderRadius: 36,
-    backgroundColor: colors.errorBg,
+    backgroundColor: `${colors.primary}15`,
     alignItems: "center", justifyContent: "center",
   },
-  iconWrapCash: { backgroundColor: colors.warningBg },
+  iconWrapWaiting: { backgroundColor: `${colors.primary}10` },
+  iconWrapSuccess: { backgroundColor: colors.successBg },
+  iconWrapError:   { backgroundColor: colors.errorBg },
   iconEmoji: { fontSize: 34 },
-  title: {
-    fontSize: typography.fontSize["2xl"],
-    fontFamily: typography.fontFamily.bold,
-    color: colors.textPrimary, textAlign: "center",
-  },
-  body: {
-    fontSize: typography.fontSize.sm,
-    fontFamily: typography.fontFamily.regular,
-    color: colors.textSecondary, textAlign: "center", lineHeight: 20,
-  },
-  bodyBold: { fontFamily: typography.fontFamily.bold, color: colors.textPrimary },
+  successWrap: { alignItems: "center", gap: spacing.lg, width: "100%" },
+
+  title: { fontSize: typography.fontSize["2xl"], fontFamily: typography.fontFamily.bold, color: colors.textPrimary, textAlign: "center" },
+  body: { fontSize: typography.fontSize.sm, fontFamily: typography.fontFamily.regular, color: colors.textSecondary, textAlign: "center", lineHeight: 20 },
+
   amtRow: {
     flexDirection: "row", justifyContent: "space-between", alignItems: "center",
     width: "100%", backgroundColor: colors.surface,
     borderRadius: radii.xl, padding: spacing.lg,
     borderWidth: 1, borderColor: colors.border,
   },
-  amtLabel: {
-    fontSize: typography.fontSize.sm, fontFamily: typography.fontFamily.medium,
-    color: colors.textSecondary,
+  amtLabel: { fontSize: typography.fontSize.sm, fontFamily: typography.fontFamily.medium, color: colors.textSecondary },
+  amtVal: { fontSize: typography.fontSize.xl, fontFamily: typography.fontFamily.extraBold, color: colors.primary },
+
+  phoneInput: {
+    width: "100%",
+    backgroundColor: colors.surface,
+    borderWidth: 1.5, borderColor: colors.border,
+    borderRadius: radii.xl,
+    paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
+    fontSize: typography.fontSize.lg,
+    fontFamily: typography.fontFamily.regular,
+    color: colors.textPrimary,
+    textAlign: "center",
   },
-  amtHint: {
-    fontSize: typography.fontSize.xs, fontFamily: typography.fontFamily.regular,
-    color: colors.textMuted, marginTop: 2,
+  errorTxt: { fontSize: typography.fontSize.sm, fontFamily: typography.fontFamily.medium, color: colors.error, textAlign: "center" },
+
+  waitingHint: {
+    flexDirection: "row", gap: spacing.sm, alignItems: "flex-start",
+    backgroundColor: `${colors.primary}10`, borderRadius: radii.lg,
+    padding: spacing.md, width: "100%",
   },
-  amtVal: {
-    fontSize: typography.fontSize.xl, fontFamily: typography.fontFamily.extraBold,
-    color: colors.primary,
-  },
+  waitingHintIcon: { fontSize: 14 },
+  waitingHintText: { flex: 1, fontSize: typography.fontSize.xs, fontFamily: typography.fontFamily.regular, color: colors.primary, lineHeight: 18 },
+
   btnGroup: { width: "100%", gap: spacing.md, alignItems: "center" },
   btnPrimary: {
     width: "100%", backgroundColor: colors.primary,
     borderRadius: radii.full, paddingVertical: spacing.lg,
     alignItems: "center", justifyContent: "center", minHeight: 52,
   },
-  btnPrimaryTxt: {
-    fontSize: typography.fontSize.base, fontFamily: typography.fontFamily.bold,
-    color: colors.white,
-  },
-  btnSecondary: {
-    width: "100%", backgroundColor: colors.surface,
-    borderRadius: radii.full, paddingVertical: spacing.md,
-    alignItems: "center", borderWidth: 1, borderColor: colors.border,
-  },
-  btnSecondaryTxt: {
-    fontSize: typography.fontSize.base, fontFamily: typography.fontFamily.medium,
-    color: colors.textSecondary,
-  },
-  cancelTxt: {
-    fontSize: typography.fontSize.sm, fontFamily: typography.fontFamily.regular,
-    color: colors.textMuted, paddingVertical: spacing.xs,
-  },
+  btnPrimaryTxt: { fontSize: typography.fontSize.base, fontFamily: typography.fontFamily.bold, color: colors.white },
+  cancelTxt: { fontSize: typography.fontSize.sm, fontFamily: typography.fontFamily.regular, color: colors.textMuted, paddingVertical: spacing.xs },
 });

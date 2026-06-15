@@ -183,10 +183,8 @@ function ColisCard({
           <Text style={colisStyles.prixValue}>{formatFCFA(colis.prix)}</Text>
         </View>
         <View style={colisStyles.modaliteBlock}>
-          <Text style={colisStyles.prixLabel}>Paiement</Text>
-          <Text style={colisStyles.modaliteValue}>
-            {colis.modalite_paiement === "A_LA_CONFIRMATION" ? "À la confirmation" : "À la livraison"}
-          </Text>
+          <Text style={colisStyles.prixLabel}>Transport</Text>
+          <Text style={colisStyles.modaliteValue}>À régler avec l'expéditeur</Text>
         </View>
       </View>
 

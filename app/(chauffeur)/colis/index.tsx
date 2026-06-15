@@ -223,12 +223,8 @@ function ColisActionCard({
         </View>
         <View style={cardStyles.prixDivider} />
         <View style={cardStyles.prixBlock}>
-          <Text style={cardStyles.prixLabel}>Paiement</Text>
-          <Text style={cardStyles.modaliteValue}>
-            {colis.modalite_paiement === "A_LA_CONFIRMATION"
-              ? "À la confirmation"
-              : "À la livraison"}
-          </Text>
+          <Text style={cardStyles.prixLabel}>Transport</Text>
+          <Text style={cardStyles.modaliteValue}>À régler avec l'expéditeur</Text>
         </View>
       </View>
 

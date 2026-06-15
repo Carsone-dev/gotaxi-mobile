@@ -1,7 +1,7 @@
 export type UserRole = "CLIENT" | "CHAUFFEUR" | "ADMIN" | "SUPER_ADMIN";
 export type UserStatus = "ACTIF" | "SUSPENDU" | "EN_ATTENTE_KYC" | "SUPPRIME";
 export type VoyageStatus = "PUBLIE" | "COMPLET" | "EN_COURS" | "TERMINE" | "ANNULE";
-export type ReservationStatus = "EN_ATTENTE" | "CONFIRMEE" | "REFUSEE" | "ANNULEE" | "TERMINEE";
+export type ReservationStatus = "EN_ATTENTE_PAIEMENT" | "EN_ATTENTE" | "CONFIRMEE" | "REFUSEE" | "ANNULEE" | "TERMINEE";
 export type TypeVehicule = "BERLINE" | "SUV" | "MINIBUS" | "BUS" | "MOTO";
 
 // ─── Users ────────────────────────────────────────────────────────────────────
@@ -247,8 +247,10 @@ export interface Reservation {
   client_id: string;
   nombre_places: number;
   prix_total: number;
+  frais_plateforme: number;
   statut: ReservationStatus;
   code_confirmation: string;
+  paiement_expire_a: string | null;
   created_at: string;
   voyage: Pick<Voyage, "id" | "ville_depart" | "ville_arrivee" | "date_depart" | "prix_par_place" | "statut"> | null;
   client: UserPublic | null;
@@ -257,7 +259,16 @@ export interface Reservation {
 export interface ReservationCreatePayload {
   voyage_id: string;
   nombre_places: number;
-  modalite_paiement?: "WALLET" | "ESPECES";
+}
+
+export interface PaiementStatutResult {
+  statut: "confirme" | "en_attente" | "echec" | "expire" | "non_initie";
+  reservation_statut: ReservationStatus;
+}
+
+export interface ColisPaiementStatutResult {
+  statut: "confirme" | "en_attente" | "echec" | "expire" | "non_initie";
+  colis_statut: ColisStatut;
 }
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
@@ -317,7 +328,7 @@ export interface ApiError {
 
 // ─── Colis ────────────────────────────────────────────────────────────────────
 
-export type ColisStatut = "EN_ATTENTE" | "CONFIRME" | "EN_TRANSIT" | "LIVRE" | "ANNULE";
+export type ColisStatut = "EN_ATTENTE_PAIEMENT" | "EN_ATTENTE" | "CONFIRME" | "EN_TRANSIT" | "LIVRE" | "ANNULE";
 export type ColisCategorie =
   | "DOCUMENTS"
   | "VETEMENTS"
@@ -325,7 +336,6 @@ export type ColisCategorie =
   | "ALIMENTAIRE"
   | "FRAGILE"
   | "AUTRE";
-export type ColisModalitePaiement = "A_LA_CONFIRMATION" | "A_LA_LIVRAISON";
 
 export interface Colis {
   id: string;
@@ -340,10 +350,11 @@ export interface Colis {
   destinataire_nom: string;
   destinataire_telephone: string;
   prix: number;
-  modalite_paiement: ColisModalitePaiement;
+  frais_plateforme: number;
   statut: ColisStatut;
   code_suivi: string;
   photo_url: string | null;
+  paiement_expire_a: string | null;
   voyage: Voyage | null;
   created_at: string;
   updated_at: string;
@@ -357,7 +368,6 @@ export interface ColisCreatePayload {
   fragile?: boolean;
   destinataire_nom: string;
   destinataire_telephone: string;
-  modalite_paiement?: ColisModalitePaiement;
 }
 
 // ─── Tarifs trajets ───────────────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 import { apiClient } from "../client";
-import type { Colis, ColisCreatePayload } from "../types";
+import type { Colis, ColisCreatePayload, ColisPaiementStatutResult } from "../types";
 
 export const colisApi = {
   create: async (payload: ColisCreatePayload): Promise<Colis> => {
@@ -26,6 +26,16 @@ export const colisApi = {
 
   detail: async (id: string): Promise<Colis> => {
     const { data } = await apiClient.get<Colis>(`/colis/${id}`);
+    return data;
+  },
+
+  initierPaiement: async (id: string, telephone: string): Promise<{ fedapay_tx_id: number; montant: number }> => {
+    const { data } = await apiClient.post(`/colis/${id}/initier-paiement`, { telephone });
+    return data;
+  },
+
+  statutPaiement: async (id: string): Promise<ColisPaiementStatutResult> => {
+    const { data } = await apiClient.get<ColisPaiementStatutResult>(`/colis/${id}/statut-paiement`);
     return data;
   },
 

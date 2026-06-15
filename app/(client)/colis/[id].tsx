@@ -18,10 +18,11 @@ import { getErrorMessage } from "@/src/utils/error-handler";
 import { useToast } from "@/src/components/common/Toast";
 import { formatFCFA } from "@/src/utils/formatters";
 import { colors, typography, spacing, radii, shadows } from "@/src/theme";
-import type { ColisStatut, ColisCategorie, ColisModalitePaiement } from "@/src/api/types";
+import type { ColisStatut, ColisCategorie } from "@/src/api/types";
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 const STATUT_CFG: Record<ColisStatut, { label: string; color: string; bg: string; icon: string; accentColor: string }> = {
+  EN_ATTENTE_PAIEMENT: { label: "En attente de paiement", color: colors.warningText, bg: colors.warningBg, icon: "💳", accentColor: colors.warning  },
   EN_ATTENTE: { label: "En attente",  color: colors.warningText, bg: colors.warningBg, icon: "⏳", accentColor: colors.warning  },
   CONFIRME:   { label: "Confirmé",    color: colors.info,        bg: colors.infoBg,    icon: "✅", accentColor: colors.info     },
   EN_TRANSIT: { label: "En transit",  color: colors.primary,     bg: colors.successBg, icon: "🚗", accentColor: colors.primary  },
@@ -37,7 +38,7 @@ const ETAPES: { statut: ColisStatut; label: string; hint: string }[] = [
 ];
 
 const ORDRE: Record<ColisStatut, number> = {
-  EN_ATTENTE: 0, CONFIRME: 1, EN_TRANSIT: 2, LIVRE: 3, ANNULE: -1,
+  EN_ATTENTE_PAIEMENT: -1, EN_ATTENTE: 0, CONFIRME: 1, EN_TRANSIT: 2, LIVRE: 3, ANNULE: -1,
 };
 
 const CAT: Record<ColisCategorie, { label: string; icon: string }> = {
@@ -47,11 +48,6 @@ const CAT: Record<ColisCategorie, { label: string; icon: string }> = {
   ALIMENTAIRE:  { label: "Alimentaire",  icon: "🍱" },
   FRAGILE:      { label: "Fragile",      icon: "🔮" },
   AUTRE:        { label: "Autre",        icon: "📦" },
-};
-
-const MODALITE_LABEL: Record<ColisModalitePaiement, string> = {
-  A_LA_LIVRAISON:    "à la livraison",
-  A_LA_CONFIRMATION: "à la confirmation",
 };
 
 // ── Timeline suivi ────────────────────────────────────────────────────────────
@@ -145,41 +141,37 @@ const tl = StyleSheet.create({
   cancelledHint:  { fontSize: typography.fontSize.xs, fontFamily: typography.fontFamily.regular, color: `${colors.error}99`, marginTop: 2 },
 });
 
-// ── Bannière paiement ─────────────────────────────────────────────────────────
-function PaiementBanner({ statut, modalite, prix }: {
-  statut: ColisStatut;
-  modalite: ColisModalitePaiement;
-  prix: number;
-}) {
+// ── Bannière statut ───────────────────────────────────────────────────────────
+function PaiementBanner({ statut, prix }: { statut: ColisStatut; prix: number }) {
   if (statut === "ANNULE") return null;
 
-  let icon = "💰", title = "", body = "", variant: "warn" | "info" | "success" | "neutral" = "neutral";
+  type Variant = "warn" | "info" | "success" | "neutral";
+  let icon = "📦", title = "", body = "", variant: Variant = "neutral";
   const prixStr = formatFCFA(prix);
 
-  if (statut === "CONFIRME" && modalite === "A_LA_CONFIRMATION") {
-    icon = "💳"; title = "Paiement requis"; variant = "warn";
-    body = `Le chauffeur a accepté votre colis. Veuillez régler ${prixStr} maintenant.`;
-  } else if (statut === "EN_TRANSIT" && modalite === "A_LA_LIVRAISON") {
+  if (statut === "EN_ATTENTE_PAIEMENT") {
+    icon = "💳"; title = "En attente de paiement"; variant = "warn";
+    body = "Finalisez le paiement des frais GoTaxi pour confirmer votre demande.";
+  } else if (statut === "EN_ATTENTE") {
+    icon = "⏳"; title = "En attente du chauffeur"; variant = "neutral";
+    body = "Le chauffeur va confirmer ou refuser votre demande d'envoi.";
+  } else if (statut === "CONFIRME") {
+    icon = "✅"; title = "Colis confirmé"; variant = "info";
+    body = `Le chauffeur a accepté votre colis. Réglez le transport (${prixStr}) directement avec lui.`;
+  } else if (statut === "EN_TRANSIT") {
     icon = "🚗"; title = "Colis en route"; variant = "info";
-    body = `Préparez ${prixStr} pour la livraison au destinataire.`;
-  } else if (statut === "LIVRE" && modalite === "A_LA_LIVRAISON") {
-    icon = "🎉"; title = "Colis livré — paiement dû"; variant = "warn";
-    body = `Confirmez le paiement de ${prixStr} au destinataire.`;
-  } else if (statut === "LIVRE" && modalite === "A_LA_CONFIRMATION") {
-    icon = "✅"; title = "Livré avec succès"; variant = "success";
-    body = "Paiement déjà effectué à la confirmation du chauffeur.";
-  } else {
-    body = `Prix estimé : ${prixStr}  ·  Paiement ${MODALITE_LABEL[modalite]}`;
+    body = "Votre colis est en transit vers le destinataire.";
+  } else if (statut === "LIVRE") {
+    icon = "🎉"; title = "Livré avec succès"; variant = "success";
+    body = "Votre colis a été remis au destinataire.";
   }
 
-  const bgMap = { warn: colors.warningBg, info: colors.infoBg, success: colors.successBg, neutral: colors.white };
-  const borderMap = { warn: `${colors.warning}40`, info: `${colors.info}30`, success: `${colors.primary}30`, neutral: colors.border };
+  const bgMap: Record<Variant, string> = { warn: colors.warningBg, info: colors.infoBg, success: colors.successBg, neutral: colors.white };
+  const borderMap: Record<Variant, string> = { warn: `${colors.warning}40`, info: `${colors.info}30`, success: `${colors.primary}30`, neutral: colors.border };
 
   return (
     <View style={[pb.banner, { backgroundColor: bgMap[variant], borderColor: borderMap[variant] }]}>
-      <View style={pb.iconWrap}>
-        <Text style={pb.icon}>{icon}</Text>
-      </View>
+      <View style={pb.iconWrap}><Text style={pb.icon}>{icon}</Text></View>
       <View style={{ flex: 1 }}>
         {title ? <Text style={pb.title}>{title}</Text> : null}
         <Text style={pb.body}>{body}</Text>
@@ -335,7 +327,7 @@ export default function ColisDetailScreen() {
         </View>
 
         {/* ── Bannière paiement ── */}
-        <PaiementBanner statut={colis.statut} modalite={colis.modalite_paiement} prix={colis.prix} />
+        <PaiementBanner statut={colis.statut} prix={colis.prix} />
 
         {/* ── Timeline ── */}
         <View style={styles.card}>
@@ -377,11 +369,7 @@ export default function ColisDetailScreen() {
               <Text style={styles.recipientPhone}>{colis.destinataire_telephone}</Text>
             </View>
           </View>
-          <Row icon="💳" label="Paiement" value={
-            colis.modalite_paiement === "A_LA_CONFIRMATION"
-              ? "À la confirmation du chauffeur"
-              : "À la livraison au destinataire"
-          } />
+          <Row icon="💳" label="Transport" value={`${formatFCFA(colis.prix)} à régler avec le chauffeur`} />
         </View>
 
         {/* ── Chauffeur & trajet ── */}

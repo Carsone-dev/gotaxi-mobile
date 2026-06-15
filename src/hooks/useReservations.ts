@@ -66,3 +66,28 @@ export const useCancelReservation = () => {
     },
   });
 };
+
+export const useInitierPaiementReservation = () =>
+  useMutation({
+    mutationFn: ({ id, telephone }: { id: string; telephone: string }) =>
+      reservationsApi.initierPaiement(id, telephone),
+  });
+
+export const useStatutPaiementReservation = (id: string, enabled: boolean) => {
+  const qc = useQueryClient();
+  return useQuery({
+    queryKey: ["reservations", id, "statut-paiement"],
+    queryFn: () => reservationsApi.statutPaiement(id),
+    enabled: !!id && enabled,
+    refetchInterval: (query) => {
+      const statut = query.state.data?.statut;
+      if (statut === "confirme" || statut === "echec" || statut === "expire") return false;
+      return 5_000;
+    },
+    onSuccess: (data: any) => {
+      if (data.statut === "confirme") {
+        qc.invalidateQueries({ queryKey: ["reservations", "me"] });
+      }
+    },
+  } as any);
+};

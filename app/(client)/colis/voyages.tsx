@@ -143,7 +143,6 @@ type Params = {
   fragile:                 string;
   destinataire_nom:        string;
   destinataire_telephone:  string;
-  modalite_paiement:       string;
 };
 
 // ── Écran ─────────────────────────────────────────────────────────────────────
