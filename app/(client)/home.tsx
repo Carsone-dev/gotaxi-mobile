@@ -10,6 +10,9 @@ import {
   Platform,
   RefreshControl,
   TextInput,
+  Image,
+  Modal,
+  useWindowDimensions,
 } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { Ionicons } from "@expo/vector-icons";
@@ -21,6 +24,7 @@ import { usePopularVoyages, useActiveVoyages } from "@/src/hooks/useVoyages";
 import { useVilles } from "@/src/hooks/useGares";
 import { formatFCFA, formatTime } from "@/src/utils/formatters";
 import { colors, typography, spacing, radii, shadows } from "@/src/theme";
+import { resolveMediaUrl } from "@/src/constants/app";
 import {
   LeafletMapView,
   BENIN_REGION,
@@ -61,6 +65,70 @@ function greeting(): string {
   return "Bonsoir";
 }
 
+const TYPE_LABELS: Record<string, string> = {
+  BERLINE: "Berline", SUV: "SUV", MINIBUS: "Minibus", BUS: "Bus", MOTO: "Moto",
+};
+
+// ── Galerie photos véhicule ────────────────────────────────────────────────────
+function VehicleGalleryModal({
+  photos,
+  visible,
+  onClose,
+}: {
+  photos: { uri: string; label: string }[];
+  visible: boolean;
+  onClose: () => void;
+}) {
+  const { width: W, height: H } = useWindowDimensions();
+  const [page, setPage] = useState(0);
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={gl.overlay}>
+        {/* Fermer */}
+        <Pressable style={gl.closeBtn} onPress={onClose} hitSlop={12}>
+          <Text style={gl.closeIcon}>✕</Text>
+        </Pressable>
+
+        {/* Label page courante */}
+        <View style={gl.labelWrap}>
+          <Text style={gl.labelText}>{photos[page]?.label ?? ""}</Text>
+        </View>
+
+        {/* ScrollView horizontal */}
+        <ScrollView
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          onMomentumScrollEnd={(e) => {
+            const newPage = Math.round(e.nativeEvent.contentOffset.x / W);
+            setPage(newPage);
+          }}
+          style={{ width: W }}
+        >
+          {photos.map((p, i) => (
+            <Image
+              key={i}
+              source={{ uri: p.uri }}
+              style={{ width: W, height: H * 0.7 }}
+              resizeMode="contain"
+            />
+          ))}
+        </ScrollView>
+
+        {/* Indicateurs dots */}
+        {photos.length > 1 && (
+          <View style={gl.dots}>
+            {photos.map((_, i) => (
+              <View key={i} style={[gl.dot, i === page && gl.dotActive]} />
+            ))}
+          </View>
+        )}
+      </View>
+    </Modal>
+  );
+}
+
 // ── Carte voyage ───────────────────────────────────────────────────────────────
 function VoyageCard({
   voyage,
@@ -74,9 +142,29 @@ function VoyageCard({
   const accent = markerColor(voyage);
   const label = statusLabel(voyage);
   const isFull = voyage.statut === "COMPLET";
+  const [showGallery, setShowGallery] = useState(false);
+
+  const exteriorUrl = resolveMediaUrl(voyage.vehicule?.photo_url ?? null);
+  const interiorUrls = (voyage.vehicule?.photos_interieures ?? [])
+    .map((u) => resolveMediaUrl(u))
+    .filter(Boolean) as string[];
+
+  const allPhotos = [
+    ...(exteriorUrl ? [{ uri: exteriorUrl, label: "Extérieur" }] : []),
+    ...interiorUrls.map((uri, i) => ({ uri, label: `Intérieur ${i + 1}` })),
+  ];
+
+  const hasGallery = allPhotos.length > 0;
 
   return (
     <Animated.View entering={FadeInDown.duration(260).delay(index * 60)}>
+      {hasGallery && (
+        <VehicleGalleryModal
+          photos={allPhotos}
+          visible={showGallery}
+          onClose={() => setShowGallery(false)}
+        />
+      )}
       <Pressable
         style={({ pressed }) => [styles.voyageCard, pressed && styles.voyageCardPressed]}
         onPress={() => {
@@ -118,6 +206,52 @@ function VoyageCard({
               </Text>
             </View>
           ) : null}
+
+          {/* Véhicule : photo + nom + galerie intérieure */}
+          {voyage.vehicule && (
+            <View style={styles.vehicleRow}>
+              <Pressable
+                onPress={() => hasGallery && setShowGallery(true)}
+                style={styles.vehicleThumbWrap}
+                disabled={!hasGallery}
+              >
+                {exteriorUrl ? (
+                  <Image
+                    source={{ uri: exteriorUrl }}
+                    style={styles.vehicleThumb}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <View style={[styles.vehicleThumb, styles.vehicleThumbPlaceholder]}>
+                    <Ionicons name="car-outline" size={20} color={colors.textMuted} />
+                  </View>
+                )}
+                {interiorUrls.length > 0 && (
+                  <View style={styles.interiorBadge}>
+                    <Text style={styles.interiorBadgeText}>
+                      📷 {interiorUrls.length}
+                    </Text>
+                  </View>
+                )}
+              </Pressable>
+              <View style={styles.vehicleInfo}>
+                <Text style={styles.vehicleName} numberOfLines={1}>
+                  {voyage.vehicule.marque} {voyage.vehicule.modele}
+                </Text>
+                <Text style={styles.vehicleType}>
+                  {TYPE_LABELS[voyage.vehicule.type_vehicule] ?? voyage.vehicule.type_vehicule}
+                </Text>
+              </View>
+              {hasGallery && (
+                <Pressable
+                  style={styles.viewPhotosBtn}
+                  onPress={() => setShowGallery(true)}
+                >
+                  <Text style={styles.viewPhotosBtnText}>Voir photos</Text>
+                </Pressable>
+              )}
+            </View>
+          )}
 
           {/* Bas : heure, date, places, prix */}
           <View style={styles.cardBottom}>
@@ -899,6 +1033,66 @@ const styles = StyleSheet.create({
   },
   placesTextFull: { color: colors.error },
 
+  /* Véhicule dans la carte */
+  vehicleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    backgroundColor: colors.surface,
+    borderRadius: radii.lg,
+    padding: spacing.sm,
+  },
+  vehicleThumbWrap: { position: "relative" },
+  vehicleThumb: {
+    width: 52,
+    height: 40,
+    borderRadius: radii.md,
+    backgroundColor: colors.border,
+  },
+  vehicleThumbPlaceholder: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  interiorBadge: {
+    position: "absolute",
+    bottom: -4,
+    right: -4,
+    backgroundColor: colors.black,
+    borderRadius: radii.full,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+  },
+  interiorBadgeText: {
+    fontSize: 9,
+    fontFamily: typography.fontFamily.bold,
+    color: colors.white,
+  },
+  vehicleInfo: { flex: 1 },
+  vehicleName: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.semiBold,
+    color: colors.textPrimary,
+  },
+  vehicleType: {
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamily.regular,
+    color: colors.textMuted,
+    marginTop: 1,
+  },
+  viewPhotosBtn: {
+    backgroundColor: `${colors.primary}15`,
+    borderRadius: radii.full,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 5,
+    borderWidth: 1,
+    borderColor: `${colors.primary}30`,
+  },
+  viewPhotosBtnText: {
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamily.semiBold,
+    color: colors.primary,
+  },
+
   /* État vide */
   empty: {
     marginHorizontal: spacing["2xl"],
@@ -946,4 +1140,56 @@ const styles = StyleSheet.create({
     fontFamily: typography.fontFamily.bold,
     color: colors.white,
   },
+});
+
+// ── Styles galerie modale ──────────────────────────────────────────────────────
+const gl = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.92)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  closeBtn: {
+    position: "absolute",
+    top: Platform.OS === "ios" ? 56 : 36,
+    right: 20,
+    zIndex: 10,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "rgba(255,255,255,0.18)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  closeIcon: { fontSize: 16, color: colors.white, fontFamily: typography.fontFamily.bold },
+  labelWrap: {
+    position: "absolute",
+    top: Platform.OS === "ios" ? 56 : 36,
+    left: 0,
+    right: 0,
+    alignItems: "center",
+    zIndex: 10,
+  },
+  labelText: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.semiBold,
+    color: "rgba(255,255,255,0.85)",
+    backgroundColor: "rgba(0,0,0,0.45)",
+    paddingHorizontal: spacing.lg,
+    paddingVertical: 4,
+    borderRadius: radii.full,
+  },
+  dots: {
+    flexDirection: "row",
+    gap: 6,
+    marginTop: spacing.lg,
+  },
+  dot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: "rgba(255,255,255,0.35)",
+  },
+  dotActive: { backgroundColor: colors.white },
 });

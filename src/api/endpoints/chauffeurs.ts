@@ -90,6 +90,55 @@ export const chauffeursApi = {
     await apiClient.delete(`/chauffeurs/me/vehicules/${id}`);
   },
 
+  uploadInteriorPhoto: async (id: string, uri: string): Promise<Vehicule> => {
+    const formData = new FormData();
+    formData.append("photo", { uri, name: "interieur.jpg", type: "image/jpeg" } as unknown as Blob);
+    const { data } = await apiClient.post<Vehicule>(
+      `/chauffeurs/me/vehicules/${id}/photos-interieures`,
+      formData,
+      { headers: { "Content-Type": "multipart/form-data" } },
+    );
+    return data;
+  },
+
+  deleteInteriorPhoto: async (id: string, index: number): Promise<Vehicule> => {
+    const { data } = await apiClient.delete<Vehicule>(
+      `/chauffeurs/me/vehicules/${id}/photos-interieures/${index}`,
+    );
+    return data;
+  },
+
+  uploadVehiculeDocuments: async (
+    id: string,
+    docs: {
+      assurance?: { uri: string; expiration?: string };
+      visite_technique?: { uri: string; expiration?: string };
+      titre?: { uri: string; expiration?: string };
+      livret_bord?: { uri: string };
+    },
+  ): Promise<Vehicule> => {
+    const formData = new FormData();
+    if (docs.assurance) {
+      formData.append("assurance", { uri: docs.assurance.uri, name: "assurance.jpg", type: "image/jpeg" } as unknown as Blob);
+      if (docs.assurance.expiration) formData.append("assurance_expiration", docs.assurance.expiration);
+    }
+    if (docs.visite_technique) {
+      formData.append("visite_technique", { uri: docs.visite_technique.uri, name: "visite_technique.jpg", type: "image/jpeg" } as unknown as Blob);
+      if (docs.visite_technique.expiration) formData.append("visite_technique_expiration", docs.visite_technique.expiration);
+    }
+    if (docs.titre) {
+      formData.append("titre", { uri: docs.titre.uri, name: "titre.jpg", type: "image/jpeg" } as unknown as Blob);
+      if (docs.titre.expiration) formData.append("titre_expiration", docs.titre.expiration);
+    }
+    if (docs.livret_bord) {
+      formData.append("livret_bord", { uri: docs.livret_bord.uri, name: "livret_bord.jpg", type: "image/jpeg" } as unknown as Blob);
+    }
+    const { data } = await apiClient.post<Vehicule>(`/chauffeurs/me/vehicules/${id}/documents`, formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+    return data;
+  },
+
   getPublic: async (id: string): Promise<ChauffeurPublic> => {
     const { data } = await apiClient.get<ChauffeurPublic>(`/chauffeurs/${id}`);
     return data;

@@ -87,6 +87,41 @@ export const useDeleteVehicule = () => {
   });
 };
 
+export const useUploadInteriorPhoto = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, uri }: { id: string; uri: string }) =>
+      chauffeursApi.uploadInteriorPhoto(id, uri),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["chauffeur", "vehicules"] }),
+  });
+};
+
+export const useDeleteInteriorPhoto = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, index }: { id: string; index: number }) =>
+      chauffeursApi.deleteInteriorPhoto(id, index),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["chauffeur", "vehicules"] }),
+  });
+};
+
+export const useUploadVehiculeDocuments = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      docs,
+    }: {
+      id: string;
+      docs: Parameters<typeof chauffeursApi.uploadVehiculeDocuments>[1];
+    }) => chauffeursApi.uploadVehiculeDocuments(id, docs),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["chauffeur", "vehicules"] });
+      qc.invalidateQueries({ queryKey: ["chauffeur", "me"] });
+    },
+  });
+};
+
 export const useUpdateChauffeurProfile = () => {
   const qc = useQueryClient();
   return useMutation({

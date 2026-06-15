@@ -1,6 +1,6 @@
 export const APP_NAME = "GoTaxi";
-export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://192.168.0.6:8001/api/v1";
-export const WS_BASE_URL = process.env.EXPO_PUBLIC_WS_URL ?? "ws://192.168.0.6:8001/ws";
+export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? "http://10.1.6.136:8001/api/v1";
+export const WS_BASE_URL = process.env.EXPO_PUBLIC_WS_URL ?? "ws://10.1.6.136:8001/ws";
 
 // Retourne l'origine du serveur (sans /api/v1) pour construire les URLs media locales
 export const SERVER_ORIGIN = API_BASE_URL.replace(/\/api\/v\d+.*$/, "");

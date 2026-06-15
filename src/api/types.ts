@@ -67,6 +67,16 @@ export interface Vehicule {
   nombre_places: number;
   climatise: boolean;
   photo_url: string | null;
+  photos_interieures: string[];
+  assurance_url: string | null;
+  assurance_expiration: string | null;
+  visite_technique_url: string | null;
+  visite_technique_expiration: string | null;
+  titre_url: string | null;
+  titre_expiration: string | null;
+  livret_bord_url: string | null;
+  docs_vehicule_valides: boolean;
+  docs_vehicule_valides_le: string | null;
   actif: boolean;
 }
 
@@ -178,6 +188,7 @@ export interface Voyage {
     type_vehicule: TypeVehicule;
     marque: string;
     modele: string;
+    photos_interieures: string[];
   } | null;
 }
 

@@ -4,12 +4,14 @@ import {
   Text,
   StyleSheet,
   FlatList,
+  ScrollView,
   Pressable,
   Modal,
   TextInput,
   ActivityIndicator,
   StatusBar,
   Image,
+  useWindowDimensions,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
@@ -239,6 +241,106 @@ const ag = StyleSheet.create({
   },
 });
 
+// ── Vehicle gallery modal ──────────────────────────────────────────────────
+
+interface GalleryProps {
+  visible: boolean;
+  photos: string[];
+  vehicleLabel: string;
+  onClose: () => void;
+}
+
+function VehicleGalleryModal({ visible, photos, vehicleLabel, onClose }: GalleryProps) {
+  const { width } = useWindowDimensions();
+  const [currentIndex, setCurrentIndex] = useState(0);
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent statusBarTranslucent>
+      <View style={gl.overlay}>
+        <View style={gl.header}>
+          <Text style={gl.vehicleLabel} numberOfLines={1}>{vehicleLabel}</Text>
+          <Pressable style={gl.closeBtn} onPress={onClose}>
+            <Text style={gl.closeText}>✕</Text>
+          </Pressable>
+        </View>
+
+        <ScrollView
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          onScroll={(e) => {
+            const idx = Math.round(e.nativeEvent.contentOffset.x / width);
+            setCurrentIndex(idx);
+          }}
+          scrollEventThrottle={16}
+          style={{ width }}
+        >
+          {photos.map((uri, idx) => (
+            <View key={idx} style={[gl.imgPage, { width }]}>
+              <Image source={{ uri }} style={gl.img} resizeMode="contain" />
+              <View style={gl.photoLabel}>
+                <Text style={gl.photoLabelText}>
+                  {idx === 0 ? "Extérieur" : `Intérieur ${idx}`}
+                </Text>
+              </View>
+            </View>
+          ))}
+        </ScrollView>
+
+        {photos.length > 1 && (
+          <View style={gl.dots}>
+            {photos.map((_, i) => (
+              <View key={i} style={[gl.dot, i === currentIndex && gl.dotActive]} />
+            ))}
+          </View>
+        )}
+      </View>
+    </Modal>
+  );
+}
+
+const gl = StyleSheet.create({
+  overlay: {
+    flex: 1, backgroundColor: "rgba(0,0,0,0.92)",
+    alignItems: "center", justifyContent: "center",
+  },
+  header: {
+    position: "absolute", top: 56, left: 0, right: 0,
+    flexDirection: "row", alignItems: "center",
+    paddingHorizontal: 20, zIndex: 10,
+  },
+  vehicleLabel: {
+    flex: 1, fontSize: 16, fontFamily: "System",
+    color: "#fff", fontWeight: "600",
+  },
+  closeBtn: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: "rgba(255,255,255,0.2)",
+    alignItems: "center", justifyContent: "center",
+  },
+  closeText: { fontSize: 16, color: "#fff", fontWeight: "bold" },
+  imgPage: {
+    height: "100%", alignItems: "center", justifyContent: "center",
+  },
+  img: { width: "100%", height: 320 },
+  photoLabel: {
+    position: "absolute", bottom: 120,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    paddingHorizontal: 12, paddingVertical: 4,
+    borderRadius: 12,
+  },
+  photoLabelText: { fontSize: 13, color: "#fff", fontWeight: "500" },
+  dots: {
+    position: "absolute", bottom: 80,
+    flexDirection: "row", gap: 6,
+  },
+  dot: {
+    width: 6, height: 6, borderRadius: 3,
+    backgroundColor: "rgba(255,255,255,0.4)",
+  },
+  dotActive: { backgroundColor: "#fff", width: 18 },
+});
+
 // ── Voyage card ────────────────────────────────────────────────────────────
 
 const VEHICULE_EMOJI: Record<string, string> = {
@@ -252,16 +354,25 @@ interface VoyageCardProps {
 }
 
 function VoyageCard({ voyage, onReserve, onColis }: VoyageCardProps) {
+  const [showGallery, setShowGallery] = useState(false);
   const isComplet = voyage.statut === "COMPLET";
   const photoUri = resolveMediaUrl(voyage.vehicule?.photo_url);
   const vehiculeEmoji = VEHICULE_EMOJI[voyage.vehicule?.type_vehicule ?? ""] ?? "🚗";
+  const interiorUris = (voyage.vehicule?.photos_interieures ?? [])
+    .map(resolveMediaUrl)
+    .filter(Boolean) as string[];
+  const allPhotos = [...(photoUri ? [photoUri] : []), ...interiorUris];
 
   return (
     <View style={vc.card}>
       {/* ── Rangée principale : image + infos ── */}
       <View style={vc.mainRow}>
-        {/* Image véhicule */}
-        <View style={vc.imgWrap}>
+        {/* Image véhicule — tappable si galerie disponible */}
+        <Pressable
+          style={vc.imgWrap}
+          onPress={() => allPhotos.length > 0 && setShowGallery(true)}
+          disabled={allPhotos.length === 0}
+        >
           {photoUri ? (
             <Image source={{ uri: photoUri }} style={vc.img} resizeMode="cover" />
           ) : (
@@ -269,7 +380,12 @@ function VoyageCard({ voyage, onReserve, onColis }: VoyageCardProps) {
               <Text style={vc.imgEmoji}>{vehiculeEmoji}</Text>
             </View>
           )}
-        </View>
+          {interiorUris.length > 0 && (
+            <View style={vc.galleryBadge}>
+              <Text style={vc.galleryBadgeText}>📷 {interiorUris.length}</Text>
+            </View>
+          )}
+        </Pressable>
 
         {/* Infos trajet */}
         <View style={vc.infoBlock}>
@@ -333,6 +449,15 @@ function VoyageCard({ voyage, onReserve, onColis }: VoyageCardProps) {
           </Pressable>
         </View>
       </View>
+
+      {allPhotos.length > 0 && (
+        <VehicleGalleryModal
+          visible={showGallery}
+          photos={allPhotos}
+          vehicleLabel={`${voyage.vehicule?.marque ?? ""} ${voyage.vehicule?.modele ?? ""}`.trim()}
+          onClose={() => setShowGallery(false)}
+        />
+      )}
     </View>
   );
 }
@@ -377,6 +502,21 @@ const vc = StyleSheet.create({
     backgroundColor: colors.successBg,
   },
   imgEmoji: { fontSize: 28 },
+  galleryBadge: {
+    position: "absolute",
+    bottom: 3,
+    right: 3,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    borderRadius: 6,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+  },
+  galleryBadgeText: {
+    fontSize: 9,
+    color: "#fff",
+    fontFamily: "System",
+    fontWeight: "600",
+  },
 
   // Infos
   infoBlock: { flex: 1 },

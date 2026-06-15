@@ -24,6 +24,9 @@ import {
   useUpdateChauffeurProfile,
   useUploadDocuments,
   useUploadVehiculePhoto,
+  useUploadInteriorPhoto,
+  useDeleteInteriorPhoto,
+  useUploadVehiculeDocuments,
 } from "@/src/hooks/useChauffeur";
 import { getErrorMessage } from "@/src/utils/error-handler";
 import { useToast } from "@/src/components/common/Toast";
@@ -65,6 +68,12 @@ const EMPTY_VEHICULE: VehiculeForm = {
   climatise: false,
 };
 
+function _docsStatus(v: Vehicule): string {
+  const submitted = [v.assurance_url, v.visite_technique_url, v.titre_url, v.livret_bord_url].filter(Boolean).length;
+  if (submitted === 0) return "📋 Documents véhicule — non soumis";
+  return `📋 ${submitted}/4 document${submitted > 1 ? "s" : ""} soumis — en attente`;
+}
+
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
 export default function ChauffeurSettingsScreen() {
@@ -78,6 +87,9 @@ export default function ChauffeurSettingsScreen() {
   const { mutateAsync: uploadDocs, isPending: uploadingDocs } = useUploadDocuments();
   const { mutateAsync: addVehicule, isPending: adding } = useAddVehicule();
   const { mutateAsync: uploadVehiculePhoto } = useUploadVehiculePhoto();
+  const { mutateAsync: uploadInteriorPhoto } = useUploadInteriorPhoto();
+  const { mutateAsync: deleteInteriorPhoto, isPending: deletingInterior } = useDeleteInteriorPhoto();
+  const { mutateAsync: uploadVehiculeDocuments, isPending: uploadingVehiculeDocs } = useUploadVehiculeDocuments();
   const { mutateAsync: updateVehicule, isPending: updating } = useUpdateVehicule();
   const { mutateAsync: deleteVehicule, isPending: deleting } = useDeleteVehicule();
 
@@ -96,12 +108,27 @@ export default function ChauffeurSettingsScreen() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [addForm, setAddForm] = useState<VehiculeForm>(EMPTY_VEHICULE);
   const [addPhoto, setAddPhoto] = useState<string | null>(null);
+  const [addInteriorPhotos, setAddInteriorPhotos] = useState<string[]>([]);
 
   // Edit vehicle modal
   const [editTarget, setEditTarget] = useState<Vehicule | null>(null);
   const [editCouleur, setEditCouleur] = useState("");
   const [editPlaces, setEditPlaces] = useState("");
   const [editClim, setEditClim] = useState(false);
+
+  // Interior photos management modal
+  const [interiorTarget, setInteriorTarget] = useState<Vehicule | null>(null);
+  const [uploadingInterior, setUploadingInterior] = useState(false);
+
+  // Vehicle documents modal
+  const [docsTarget, setDocsTarget] = useState<Vehicule | null>(null);
+  const [docAssuranceUri, setDocAssuranceUri] = useState<string | null>(null);
+  const [docAssuranceExp, setDocAssuranceExp] = useState("");
+  const [docVisiteUri, setDocVisiteUri] = useState<string | null>(null);
+  const [docVisiteExp, setDocVisiteExp] = useState("");
+  const [docTitreUri, setDocTitreUri] = useState<string | null>(null);
+  const [docTitreExp, setDocTitreExp] = useState("");
+  const [docLivretUri, setDocLivretUri] = useState<string | null>(null);
 
   // ─── Handlers ───────────────────────────────────────────────────────────────
 
@@ -124,6 +151,28 @@ export default function ChauffeurSettingsScreen() {
     } catch (e) {
       showToast(getErrorMessage(e), "error");
     }
+  };
+
+  const pickInteriorPhoto = (onPicked: (uri: string) => void) => {
+    Alert.alert("Photo intérieure", "Comment souhaitez-vous ajouter cette photo ?", [
+      {
+        text: "Prendre une photo",
+        onPress: async () => {
+          const { status } = await ImagePicker.requestCameraPermissionsAsync();
+          if (status !== "granted") { showToast("Permission caméra refusée", "error"); return; }
+          const result = await ImagePicker.launchCameraAsync({ allowsEditing: true, aspect: [4, 3], quality: 0.8 });
+          if (!result.canceled && result.assets[0]) onPicked(result.assets[0].uri);
+        },
+      },
+      {
+        text: "Choisir depuis la galerie",
+        onPress: async () => {
+          const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], allowsEditing: true, aspect: [4, 3], quality: 0.8 });
+          if (!result.canceled && result.assets[0]) onPicked(result.assets[0].uri);
+        },
+      },
+      { text: "Annuler", style: "cancel" },
+    ]);
   };
 
   const pickVehiculePhoto = () => {
@@ -235,18 +284,56 @@ export default function ChauffeurSettingsScreen() {
         try {
           await uploadVehiculePhoto({ id: vehicule.id, uri: addPhoto });
         } catch {
-          // photo non bloquante : le véhicule est créé, on avertit seulement
-          showToast("Véhicule ajouté (photo non envoyée)", "info");
+          showToast("Véhicule ajouté (photo extérieure non envoyée)", "info");
           setShowAddModal(false);
           setAddForm(EMPTY_VEHICULE);
           setAddPhoto(null);
+          setAddInteriorPhotos([]);
           return;
         }
+      }
+      for (const uri of addInteriorPhotos) {
+        try { await uploadInteriorPhoto({ id: vehicule.id, uri }); } catch { /* non bloquant */ }
       }
       showToast("Véhicule ajouté", "success");
       setShowAddModal(false);
       setAddForm(EMPTY_VEHICULE);
       setAddPhoto(null);
+      setAddInteriorPhotos([]);
+    } catch (e) {
+      showToast(getErrorMessage(e), "error");
+    }
+  };
+
+  const openDocsModal = (v: Vehicule) => {
+    setDocsTarget(v);
+    setDocAssuranceUri(null);
+    setDocAssuranceExp(v.assurance_expiration ?? "");
+    setDocVisiteUri(null);
+    setDocVisiteExp(v.visite_technique_expiration ?? "");
+    setDocTitreUri(null);
+    setDocTitreExp(v.titre_expiration ?? "");
+    setDocLivretUri(null);
+  };
+
+  const handleUploadVehiculeDocuments = async () => {
+    if (!docsTarget) return;
+    if (!docAssuranceUri && !docVisiteUri && !docTitreUri && !docLivretUri) {
+      showToast("Ajoutez au moins une pièce", "error");
+      return;
+    }
+    try {
+      await uploadVehiculeDocuments({
+        id: docsTarget.id,
+        docs: {
+          ...(docAssuranceUri && { assurance: { uri: docAssuranceUri, expiration: docAssuranceExp || undefined } }),
+          ...(docVisiteUri && { visite_technique: { uri: docVisiteUri, expiration: docVisiteExp || undefined } }),
+          ...(docTitreUri && { titre: { uri: docTitreUri, expiration: docTitreExp || undefined } }),
+          ...(docLivretUri && { livret_bord: { uri: docLivretUri } }),
+        },
+      });
+      showToast("Documents envoyés — en attente de validation", "success");
+      setDocsTarget(null);
     } catch (e) {
       showToast(getErrorMessage(e), "error");
     }
@@ -429,6 +516,23 @@ export default function ChauffeurSettingsScreen() {
                   <Tag label={`${v.nombre_places} places`} />
                   {v.climatise && <Tag label="❄ Clim" />}
                 </View>
+                <Pressable style={styles.interiorRow} onPress={() => setInteriorTarget(v)}>
+                  <Text style={styles.interiorRowText}>
+                    📷 {(v.photos_interieures ?? []).length} photo{(v.photos_interieures ?? []).length !== 1 ? "s" : ""} intérieure{(v.photos_interieures ?? []).length !== 1 ? "s" : ""}
+                  </Text>
+                  <Text style={styles.interiorRowArrow}>›</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.interiorRow, v.docs_vehicule_valides && styles.docsValidatedRow]}
+                  onPress={() => openDocsModal(v)}
+                >
+                  <Text style={[styles.interiorRowText, v.docs_vehicule_valides && styles.docsValidatedText]}>
+                    {v.docs_vehicule_valides
+                      ? "✓ Documents validés"
+                      : _docsStatus(v)}
+                  </Text>
+                  {!v.docs_vehicule_valides && <Text style={styles.interiorRowArrow}>›</Text>}
+                </Pressable>
               </View>
               <View style={styles.vehiculeActions}>
                 <Pressable
@@ -545,7 +649,7 @@ export default function ChauffeurSettingsScreen() {
       {/* ── Modal : ajouter véhicule ─────────────────────────────────────── */}
       <Modal visible={showAddModal} animationType="slide" presentationStyle="pageSheet">
         <ScrollView style={styles.modal} contentContainerStyle={styles.modalContent}>
-          <ModalHeader title="Ajouter un véhicule" onClose={() => { setShowAddModal(false); setAddForm(EMPTY_VEHICULE); setAddPhoto(null); }} />
+          <ModalHeader title="Ajouter un véhicule" onClose={() => { setShowAddModal(false); setAddForm(EMPTY_VEHICULE); setAddPhoto(null); setAddInteriorPhotos([]); }} />
 
           <FormField label="Marque *" value={addForm.marque} onChange={(v) => setAddForm((f) => ({ ...f, marque: v }))} placeholder="Ex: Toyota" />
           <FormField label="Modèle *" value={addForm.modele} onChange={(v) => setAddForm((f) => ({ ...f, modele: v }))} placeholder="Ex: Corolla" />
@@ -623,6 +727,32 @@ export default function ChauffeurSettingsScreen() {
             )}
           </View>
 
+          <View style={styles.formGroup}>
+            <Text style={styles.formLabel}>Photos intérieures (optionnel)</Text>
+            <Text style={styles.interiorHint}>Aidez vos passagers à évaluer le confort — max 5 photos</Text>
+            <View style={styles.interiorGrid}>
+              {addInteriorPhotos.map((uri, idx) => (
+                <Pressable
+                  key={idx}
+                  style={styles.interiorThumbWrap}
+                  onPress={() => setAddInteriorPhotos((p) => p.filter((_, i) => i !== idx))}
+                >
+                  <Image source={{ uri }} style={styles.interiorThumb} />
+                  <View style={styles.interiorThumbDel}><Text style={styles.interiorThumbDelText}>✕</Text></View>
+                </Pressable>
+              ))}
+              {addInteriorPhotos.length < 5 && (
+                <Pressable
+                  style={styles.interiorAddBtn}
+                  onPress={() => pickInteriorPhoto((uri) => setAddInteriorPhotos((p) => [...p, uri]))}
+                >
+                  <Text style={styles.interiorAddIcon}>📷</Text>
+                  <Text style={styles.interiorAddText}>Ajouter</Text>
+                </Pressable>
+              )}
+            </View>
+          </View>
+
           <Pressable
             style={[styles.submitBtn, adding && styles.submitBtnDisabled]}
             onPress={handleAddVehicule}
@@ -630,6 +760,158 @@ export default function ChauffeurSettingsScreen() {
           >
             {adding ? <ActivityIndicator color={colors.white} /> : <Text style={styles.submitBtnText}>Ajouter le véhicule</Text>}
           </Pressable>
+        </ScrollView>
+      </Modal>
+      {/* ── Modal : documents véhicule ──────────────────────────────────── */}
+      <Modal visible={!!docsTarget} animationType="slide" presentationStyle="pageSheet">
+        <ScrollView style={styles.modal} contentContainerStyle={styles.modalContent}>
+          <ModalHeader
+            title={docsTarget ? `${docsTarget.marque} ${docsTarget.modele}` : ""}
+            onClose={() => setDocsTarget(null)}
+          />
+
+          {docsTarget?.docs_vehicule_valides ? (
+            <View style={styles.docsValidatedBanner}>
+              <Text style={styles.docsValidatedBannerText}>
+                ✓ Tous les documents ont été validés le {docsTarget.docs_vehicule_valides_le}
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.docsInfoBanner}>
+              <Text style={styles.docsInfoText}>
+                Soumettez les 4 pièces réglementaires. L'administration les vérifiera avant de valider votre KYC.
+              </Text>
+            </View>
+          )}
+
+          <VehiculeDocRow
+            label="Assurance valide"
+            icon="🛡️"
+            existingUrl={resolveMediaUrl(docsTarget?.assurance_url ?? null)}
+            existingExpiration={docsTarget?.assurance_expiration ?? null}
+            newUri={docAssuranceUri}
+            expirationValue={docAssuranceExp}
+            onExpirationChange={setDocAssuranceExp}
+            onPick={() => pickKycDoc(setDocAssuranceUri)}
+            onClearNew={() => setDocAssuranceUri(null)}
+          />
+
+          <VehiculeDocRow
+            label="Visite technique"
+            icon="🔧"
+            existingUrl={resolveMediaUrl(docsTarget?.visite_technique_url ?? null)}
+            existingExpiration={docsTarget?.visite_technique_expiration ?? null}
+            newUri={docVisiteUri}
+            expirationValue={docVisiteExp}
+            onExpirationChange={setDocVisiteExp}
+            onPick={() => pickKycDoc(setDocVisiteUri)}
+            onClearNew={() => setDocVisiteUri(null)}
+          />
+
+          <VehiculeDocRow
+            label="Titre à jour"
+            icon="📄"
+            existingUrl={resolveMediaUrl(docsTarget?.titre_url ?? null)}
+            existingExpiration={docsTarget?.titre_expiration ?? null}
+            newUri={docTitreUri}
+            expirationValue={docTitreExp}
+            onExpirationChange={setDocTitreExp}
+            onPick={() => pickKycDoc(setDocTitreUri)}
+            onClearNew={() => setDocTitreUri(null)}
+          />
+
+          <VehiculeDocRow
+            label="Livret de bord"
+            icon="📒"
+            existingUrl={resolveMediaUrl(docsTarget?.livret_bord_url ?? null)}
+            existingExpiration={null}
+            newUri={docLivretUri}
+            expirationValue=""
+            onExpirationChange={() => {}}
+            onPick={() => pickKycDoc(setDocLivretUri)}
+            onClearNew={() => setDocLivretUri(null)}
+            noExpiration
+          />
+
+          <Pressable
+            style={[
+              styles.submitBtn,
+              (!docAssuranceUri && !docVisiteUri && !docTitreUri && !docLivretUri) && styles.submitBtnDisabled,
+              uploadingVehiculeDocs && styles.submitBtnDisabled,
+            ]}
+            onPress={handleUploadVehiculeDocuments}
+            disabled={uploadingVehiculeDocs || (!docAssuranceUri && !docVisiteUri && !docTitreUri && !docLivretUri)}
+          >
+            {uploadingVehiculeDocs ? (
+              <ActivityIndicator color={colors.white} />
+            ) : (
+              <Text style={styles.submitBtnText}>Envoyer les documents</Text>
+            )}
+          </Pressable>
+        </ScrollView>
+      </Modal>
+
+      {/* ── Modal : photos intérieures ──────────────────────────────────── */}
+      <Modal visible={!!interiorTarget} animationType="slide" presentationStyle="pageSheet">
+        <ScrollView style={styles.modal} contentContainerStyle={styles.modalContent}>
+          <ModalHeader
+            title={interiorTarget ? `Intérieur — ${interiorTarget.marque} ${interiorTarget.modele}` : ""}
+            onClose={() => setInteriorTarget(null)}
+          />
+          <Text style={styles.sectionSub}>
+            Ces photos aident vos passagers à évaluer le confort avant de réserver. Maximum 5 photos.
+          </Text>
+
+          <View style={styles.interiorGrid}>
+            {(interiorTarget?.photos_interieures ?? []).map((url, idx) => (
+              <View key={idx} style={styles.interiorThumbWrap}>
+                <Image source={{ uri: resolveMediaUrl(url)! }} style={styles.interiorThumb} />
+                <Pressable
+                  style={styles.interiorThumbDel}
+                  disabled={deletingInterior}
+                  onPress={async () => {
+                    try {
+                      const updated = await deleteInteriorPhoto({ id: interiorTarget!.id, index: idx });
+                      setInteriorTarget(updated);
+                    } catch (e) {
+                      showToast(getErrorMessage(e), "error");
+                    }
+                  }}
+                >
+                  <Text style={styles.interiorThumbDelText}>✕</Text>
+                </Pressable>
+              </View>
+            ))}
+            {(interiorTarget?.photos_interieures ?? []).length < 5 && (
+              <Pressable
+                style={[styles.interiorAddBtn, uploadingInterior && { opacity: 0.4 }]}
+                disabled={uploadingInterior}
+                onPress={() =>
+                  pickInteriorPhoto(async (uri) => {
+                    if (!interiorTarget) return;
+                    setUploadingInterior(true);
+                    try {
+                      const updated = await uploadInteriorPhoto({ id: interiorTarget.id, uri });
+                      setInteriorTarget(updated);
+                    } catch (e) {
+                      showToast(getErrorMessage(e), "error");
+                    } finally {
+                      setUploadingInterior(false);
+                    }
+                  })
+                }
+              >
+                {uploadingInterior ? (
+                  <ActivityIndicator color={colors.primary} />
+                ) : (
+                  <>
+                    <Text style={styles.interiorAddIcon}>📷</Text>
+                    <Text style={styles.interiorAddText}>Ajouter</Text>
+                  </>
+                )}
+              </Pressable>
+            )}
+          </View>
         </ScrollView>
       </Modal>
     </ScrollView>
@@ -708,6 +990,91 @@ function KycDocRow({
           </Pressable>
         )}
       </View>
+    </View>
+  );
+}
+
+function VehiculeDocRow({
+  label, icon, existingUrl, existingExpiration,
+  newUri, expirationValue, onExpirationChange,
+  onPick, onClearNew, noExpiration = false,
+}: {
+  label: string; icon: string;
+  existingUrl: string | null; existingExpiration: string | null;
+  newUri: string | null; expirationValue: string;
+  onExpirationChange: (v: string) => void;
+  onPick: () => void; onClearNew: () => void;
+  noExpiration?: boolean;
+}) {
+  const displayUri = newUri ?? existingUrl;
+  const isNew = !!newUri;
+  const isExisting = !newUri && !!existingUrl;
+  const hasFile = isNew || isExisting;
+
+  function formatExp(iso: string | null) {
+    if (!iso) return null;
+    const d = new Date(iso);
+    return isNaN(d.getTime()) ? iso : d.toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" });
+  }
+
+  return (
+    <View style={styles.vDocCard}>
+      {/* En-tête : icône + label + statut */}
+      <View style={styles.vDocCardTop}>
+        <View style={styles.vDocIconBox}>
+          <Text style={styles.vDocIconText}>{icon}</Text>
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.vDocLabel}>{label}</Text>
+          {isNew ? (
+            <View style={styles.vDocStatusBadge}>
+              <Text style={styles.vDocStatusNew}>● Nouveau — en attente d'envoi</Text>
+            </View>
+          ) : isExisting ? (
+            <View style={styles.vDocStatusBadge}>
+              <Text style={styles.vDocStatusOk}>✓ Soumis</Text>
+              {existingExpiration && (
+                <Text style={styles.vDocExpExisting}>exp. {formatExp(existingExpiration)}</Text>
+              )}
+            </View>
+          ) : (
+            <Text style={styles.vDocStatusMissing}>Non soumis</Text>
+          )}
+        </View>
+      </View>
+
+      {/* Zone photo */}
+      {displayUri ? (
+        <View style={styles.vDocPreviewWrap}>
+          <Image source={{ uri: displayUri }} style={styles.vDocPreview} resizeMode="cover" />
+          <View style={styles.vDocPreviewActions}>
+            <Pressable style={styles.vDocChangeBtn} onPress={onPick}>
+              <Text style={styles.vDocChangeBtnText}>📷 Changer</Text>
+            </Pressable>
+            {isNew && (
+              <Pressable style={styles.vDocRemoveBtn} onPress={onClearNew}>
+                <Text style={styles.vDocRemoveBtnText}>✕ Retirer</Text>
+              </Pressable>
+            )}
+          </View>
+        </View>
+      ) : (
+        <Pressable style={styles.vDocPlaceholder} onPress={onPick}>
+          <Text style={styles.vDocPlaceholderIcon}>📷</Text>
+          <Text style={styles.vDocPlaceholderText}>Photographier ou importer</Text>
+          <Text style={styles.vDocPlaceholderSub}>Galerie ou appareil photo</Text>
+        </Pressable>
+      )}
+
+      {!noExpiration && (
+        <DatePickerField
+          label="Date d'expiration"
+          value={expirationValue}
+          onChange={onExpirationChange}
+          minimumDate={new Date()}
+          placeholder="Sélectionner la date d'expiration"
+        />
+      )}
     </View>
   );
 }
@@ -1177,5 +1544,228 @@ const styles = StyleSheet.create({
     fontSize: 24,
     color: colors.textMuted,
     fontFamily: typography.fontFamily.regular,
+  },
+  // Interior photos
+  interiorRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: spacing.xs,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radii.sm,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  interiorRowText: {
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamily.medium,
+    color: colors.primary,
+  },
+  interiorRowArrow: {
+    fontSize: 14,
+    color: colors.primary,
+  },
+  interiorHint: {
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamily.regular,
+    color: colors.textMuted,
+    marginTop: -spacing.xs,
+    marginBottom: spacing.xs,
+  },
+  interiorGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+  },
+  interiorThumbWrap: {
+    position: "relative",
+  },
+  interiorThumb: {
+    width: 80,
+    height: 60,
+    borderRadius: radii.sm,
+    backgroundColor: colors.border,
+  },
+  interiorThumbDel: {
+    position: "absolute",
+    top: -6,
+    right: -6,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: colors.error,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  interiorThumbDelText: {
+    fontSize: 10,
+    color: colors.white,
+    fontFamily: typography.fontFamily.bold,
+  },
+  interiorAddBtn: {
+    width: 80,
+    height: 60,
+    borderRadius: radii.sm,
+    borderWidth: 1.5,
+    borderColor: colors.primary,
+    borderStyle: "dashed",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.surface,
+    gap: 2,
+  },
+  interiorAddIcon: { fontSize: 18 },
+  interiorAddText: {
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamily.medium,
+    color: colors.primary,
+  },
+  // Vehicle docs — status rows in vehicle card
+  docsValidatedRow: {
+    backgroundColor: colors.successBg,
+    borderColor: colors.success,
+  },
+  docsValidatedText: {
+    color: colors.success,
+    fontFamily: typography.fontFamily.semiBold,
+  },
+  // Banners in modal
+  docsValidatedBanner: {
+    backgroundColor: colors.successBg,
+    borderRadius: radii.md,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.success,
+    marginBottom: spacing.md,
+  },
+  docsValidatedBannerText: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.semiBold,
+    color: colors.success,
+    textAlign: "center",
+  },
+  docsInfoBanner: {
+    backgroundColor: colors.surface,
+    borderRadius: radii.md,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginBottom: spacing.sm,
+  },
+  docsInfoText: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.regular,
+    color: colors.textSecondary,
+    lineHeight: 20,
+  },
+  // VehiculeDocRow card
+  vDocCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radii.lg,
+    padding: spacing.lg,
+    gap: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  vDocCardTop: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: spacing.md,
+  },
+  vDocIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: radii.md,
+    backgroundColor: colors.white,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  vDocIconText: { fontSize: 22 },
+  vDocLabel: {
+    fontSize: typography.fontSize.base,
+    fontFamily: typography.fontFamily.bold,
+    color: colors.textPrimary,
+    marginBottom: 3,
+  },
+  vDocStatusBadge: { flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" },
+  vDocStatusNew: {
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamily.medium,
+    color: colors.primary,
+  },
+  vDocStatusOk: {
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamily.semiBold,
+    color: colors.success,
+  },
+  vDocExpExisting: {
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamily.regular,
+    color: colors.textMuted,
+  },
+  vDocStatusMissing: {
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamily.regular,
+    color: colors.textMuted,
+  },
+  // Photo zone
+  vDocPlaceholder: {
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    borderStyle: "dashed",
+    borderRadius: radii.md,
+    paddingVertical: spacing.xl,
+    alignItems: "center",
+    gap: spacing.xs,
+    backgroundColor: colors.white,
+  },
+  vDocPlaceholderIcon: { fontSize: 28 },
+  vDocPlaceholderText: {
+    fontSize: typography.fontSize.base,
+    fontFamily: typography.fontFamily.semiBold,
+    color: colors.textSecondary,
+  },
+  vDocPlaceholderSub: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.regular,
+    color: colors.textMuted,
+  },
+  vDocPreviewWrap: { gap: spacing.sm },
+  vDocPreview: {
+    width: "100%",
+    height: 140,
+    borderRadius: radii.md,
+    backgroundColor: colors.border,
+  },
+  vDocPreviewActions: { flexDirection: "row", gap: spacing.sm },
+  vDocChangeBtn: {
+    flex: 1,
+    paddingVertical: spacing.sm,
+    borderRadius: radii.md,
+    borderWidth: 1.5,
+    borderColor: colors.primary,
+    alignItems: "center",
+  },
+  vDocChangeBtnText: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.semiBold,
+    color: colors.primary,
+  },
+  vDocRemoveBtn: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radii.md,
+    borderWidth: 1.5,
+    borderColor: colors.error,
+    alignItems: "center",
+  },
+  vDocRemoveBtnText: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.semiBold,
+    color: colors.error,
   },
 });
