@@ -341,6 +341,8 @@ interface VoyageCardProps {
 }
 
 function VoyageCard({ voyage, onReserve, onColis }: VoyageCardProps) {
+  const isComplet = voyage.statut === "COMPLET";
+
   return (
     <View style={vc.card}>
       <View style={vc.header}>
@@ -353,6 +355,11 @@ function VoyageCard({ voyage, onReserve, onColis }: VoyageCardProps) {
           </Text>
         </View>
         <View style={vc.badges}>
+          {isComplet && (
+            <View style={vc.completBadge}>
+              <Text style={vc.completBadgeText}>Complet</Text>
+            </View>
+          )}
           {voyage.climatise && <Text style={vc.badge}>❄️</Text>}
           {voyage.accepte_colis && <Text style={vc.badge}>📦</Text>}
         </View>
@@ -360,17 +367,20 @@ function VoyageCard({ voyage, onReserve, onColis }: VoyageCardProps) {
 
       <View style={vc.infoRow}>
         <Text style={vc.places}>
-          {voyage.nombre_places_restantes} place{voyage.nombre_places_restantes > 1 ? "s" : ""} restante{voyage.nombre_places_restantes > 1 ? "s" : ""}
+          {isComplet
+            ? "Aucune place disponible"
+            : `${voyage.nombre_places_restantes} place${voyage.nombre_places_restantes > 1 ? "s" : ""} restante${voyage.nombre_places_restantes > 1 ? "s" : ""}`}
         </Text>
         <Text style={vc.price}>{formatPrice(voyage.prix_par_place)} / place</Text>
       </View>
 
       <View style={vc.actions}>
         <Pressable
-          style={({ pressed }) => [vc.btnReserve, pressed && { opacity: 0.85 }]}
+          style={[vc.btnReserve, isComplet && vc.btnDisabled]}
+          disabled={isComplet}
           onPress={() => onReserve(voyage)}
         >
-          <Text style={vc.btnReserveText}>Réserver</Text>
+          <Text style={vc.btnReserveText}>{isComplet ? "Complet" : "Réserver"}</Text>
         </Pressable>
 
         {voyage.accepte_colis && (
@@ -419,8 +429,19 @@ const vc = StyleSheet.create({
     fontFamily: typography.fontFamily.regular,
     color: colors.textSecondary,
   },
-  badges: { flexDirection: "row", gap: 4, paddingTop: 2 },
+  badges: { flexDirection: "row", gap: 4, paddingTop: 2, alignItems: "center" },
   badge: { fontSize: 16 },
+  completBadge: {
+    backgroundColor: colors.errorBg,
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  completBadgeText: {
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamily.bold,
+    color: colors.errorText,
+  },
   infoRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -448,6 +469,7 @@ const vc = StyleSheet.create({
     paddingVertical: 10,
     alignItems: "center",
   },
+  btnDisabled: { backgroundColor: colors.border },
   btnReserveText: {
     fontSize: typography.fontSize.sm,
     fontFamily: typography.fontFamily.bold,
