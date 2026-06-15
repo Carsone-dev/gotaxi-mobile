@@ -173,6 +173,12 @@ export interface Voyage {
   statut: VoyageStatus;
   distance_km: number | null;
   created_at: string;
+  vehicule: {
+    photo_url: string | null;
+    type_vehicule: TypeVehicule;
+    marque: string;
+    modele: string;
+  } | null;
 }
 
 export interface VoyageSearchParams {

@@ -9,6 +9,7 @@ import {
   TextInput,
   ActivityIndicator,
   StatusBar,
+  Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
@@ -16,6 +17,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { usePublicVoyages, usePublicSearchVoyages, usePublicVilles } from "@/src/hooks/useVoyages";
 import type { Voyage } from "@/src/api/types";
 import { colors, typography, spacing } from "@/src/theme";
+import { resolveMediaUrl } from "@/src/constants/app";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -239,6 +241,10 @@ const ag = StyleSheet.create({
 
 // ── Voyage card ────────────────────────────────────────────────────────────
 
+const VEHICULE_EMOJI: Record<string, string> = {
+  BERLINE: "🚗", SUV: "🚙", MINIBUS: "🚐", BUS: "🚌", MOTO: "🏍️",
+};
+
 interface VoyageCardProps {
   voyage: Voyage;
   onReserve: (v: Voyage) => void;
@@ -247,39 +253,70 @@ interface VoyageCardProps {
 
 function VoyageCard({ voyage, onReserve, onColis }: VoyageCardProps) {
   const isComplet = voyage.statut === "COMPLET";
+  const photoUri = resolveMediaUrl(voyage.vehicule?.photo_url);
+  const vehiculeEmoji = VEHICULE_EMOJI[voyage.vehicule?.type_vehicule ?? ""] ?? "🚗";
 
   return (
     <View style={vc.card}>
-      <View style={vc.top}>
-        <View style={vc.routeBlock}>
+      {/* ── Rangée principale : image + infos ── */}
+      <View style={vc.mainRow}>
+        {/* Image véhicule */}
+        <View style={vc.imgWrap}>
+          {photoUri ? (
+            <Image source={{ uri: photoUri }} style={vc.img} resizeMode="cover" />
+          ) : (
+            <View style={vc.imgFallback}>
+              <Text style={vc.imgEmoji}>{vehiculeEmoji}</Text>
+            </View>
+          )}
+        </View>
+
+        {/* Infos trajet */}
+        <View style={vc.infoBlock}>
           <Text style={vc.route} numberOfLines={1}>
             {voyage.ville_depart} → {voyage.ville_arrivee}
           </Text>
           <Text style={vc.meta}>
             {formatDate(voyage.date_depart)} · {formatTime(voyage.date_depart)}
-            {!isComplet && ` · ${voyage.nombre_places_restantes} place${voyage.nombre_places_restantes > 1 ? "s" : ""}`}
           </Text>
+          <View style={vc.tagsRow}>
+            {voyage.climatise && (
+              <View style={vc.tag}><Text style={vc.tagText}>❄️ Climatisé</Text></View>
+            )}
+            {voyage.accepte_colis && (
+              <View style={vc.tag}><Text style={vc.tagText}>📦 Colis</Text></View>
+            )}
+          </View>
         </View>
+
+        {/* Prix */}
         <View style={vc.priceBlock}>
           <Text style={vc.price}>{formatPrice(voyage.prix_par_place)}</Text>
-          <Text style={vc.priceSub}>FCFA/pl.</Text>
+          <Text style={vc.priceUnit}>FCFA</Text>
+          <Text style={vc.priceUnit}>/place</Text>
         </View>
       </View>
 
-      <View style={vc.bottom}>
-        <View style={vc.icons}>
-          {voyage.climatise && <Text style={vc.icon}>❄️</Text>}
-          {voyage.accepte_colis && <Text style={vc.icon}>📦</Text>}
-          {isComplet && (
-            <View style={vc.completTag}>
+      {/* ── Séparateur ── */}
+      <View style={vc.sep} />
+
+      {/* ── Pied : places + boutons ── */}
+      <View style={vc.footer}>
+        <View style={vc.placesRow}>
+          {isComplet ? (
+            <View style={vc.completBadge}>
               <Text style={vc.completText}>Complet</Text>
             </View>
+          ) : (
+            <Text style={vc.placesText}>
+              {voyage.nombre_places_restantes} place{voyage.nombre_places_restantes > 1 ? "s" : ""} dispo.
+            </Text>
           )}
         </View>
         <View style={vc.actions}>
           {voyage.accepte_colis && (
             <Pressable
-              style={({ pressed }) => [vc.colisBtn, pressed && { opacity: 0.8 }]}
+              style={({ pressed }) => [vc.colisBtn, pressed && { opacity: 0.75 }]}
               onPress={() => onColis(voyage)}
             >
               <Text style={vc.colisBtnText}>Colis</Text>
@@ -302,58 +339,140 @@ function VoyageCard({ voyage, onReserve, onColis }: VoyageCardProps) {
 
 const vc = StyleSheet.create({
   card: {
-    backgroundColor: colors.white, marginHorizontal: spacing.lg,
-    marginBottom: spacing.sm, borderRadius: 14,
-    borderWidth: 1, borderColor: colors.border,
-    paddingHorizontal: spacing.lg, paddingVertical: 12,
+    backgroundColor: colors.white,
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 2,
   },
-  top: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 },
-  routeBlock: { flex: 1, marginRight: 12 },
+
+  // Rangée principale
+  mainRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: spacing.md,
+    gap: 10,
+  },
+
+  // Image
+  imgWrap: {
+    width: 76,
+    height: 60,
+    borderRadius: 10,
+    overflow: "hidden",
+    backgroundColor: colors.surface,
+  },
+  img: { width: "100%", height: "100%" },
+  imgFallback: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.successBg,
+  },
+  imgEmoji: { fontSize: 28 },
+
+  // Infos
+  infoBlock: { flex: 1 },
   route: {
-    fontSize: typography.fontSize.base, fontFamily: typography.fontFamily.bold,
-    color: colors.textPrimary, marginBottom: 3,
+    fontSize: typography.fontSize.base,
+    fontFamily: typography.fontFamily.bold,
+    color: colors.textPrimary,
+    marginBottom: 2,
   },
   meta: {
-    fontSize: typography.fontSize.sm, fontFamily: typography.fontFamily.regular,
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.regular,
+    color: colors.textSecondary,
+    marginBottom: 6,
+  },
+  tagsRow: { flexDirection: "row", gap: 5, flexWrap: "wrap" },
+  tag: {
+    backgroundColor: colors.surface,
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  tagText: {
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamily.medium,
     color: colors.textSecondary,
   },
-  priceBlock: { alignItems: "flex-end" },
+
+  // Prix
+  priceBlock: { alignItems: "flex-end", minWidth: 60 },
   price: {
-    fontSize: typography.fontSize.lg, fontFamily: typography.fontFamily.bold,
+    fontSize: typography.fontSize.xl,
+    fontFamily: typography.fontFamily.extraBold,
     color: colors.primary,
+    lineHeight: 24,
   },
-  priceSub: {
-    fontSize: typography.fontSize.xs, fontFamily: typography.fontFamily.regular,
+  priceUnit: {
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamily.regular,
     color: colors.textMuted,
   },
-  bottom: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  icons: { flexDirection: "row", alignItems: "center", gap: 6 },
-  icon: { fontSize: 15 },
-  completTag: {
-    backgroundColor: colors.errorBg, borderRadius: 6,
-    paddingHorizontal: 6, paddingVertical: 2,
+
+  // Séparateur
+  sep: { height: 1, backgroundColor: colors.border, marginHorizontal: spacing.md },
+
+  // Pied
+  footer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+  },
+  placesRow: {},
+  placesText: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.medium,
+    color: colors.textSecondary,
+  },
+  completBadge: {
+    backgroundColor: colors.errorBg,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
   },
   completText: {
-    fontSize: typography.fontSize.xs, fontFamily: typography.fontFamily.bold,
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamily.bold,
     color: colors.errorText,
   },
   actions: { flexDirection: "row", gap: 8 },
   colisBtn: {
-    backgroundColor: colors.surface, borderRadius: 8,
-    paddingHorizontal: 12, paddingVertical: 7,
-    borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.surface,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   colisBtnText: {
-    fontSize: typography.fontSize.sm, fontFamily: typography.fontFamily.semiBold,
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.semiBold,
     color: colors.textPrimary,
   },
   reserveBtn: {
-    backgroundColor: colors.primary, borderRadius: 8,
-    paddingHorizontal: 14, paddingVertical: 7,
+    backgroundColor: colors.primary,
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 7,
   },
   reserveBtnOff: { backgroundColor: colors.border },
   reserveBtnText: {
-    fontSize: typography.fontSize.sm, fontFamily: typography.fontFamily.bold,
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.bold,
     color: colors.white,
   },
   reserveBtnTextOff: { color: colors.textMuted },
