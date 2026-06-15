@@ -25,7 +25,7 @@ export default function SplashScreen() {
       if (isAuthenticated) {
         router.replace(isChauffeurMode ? "/(chauffeur)/dashboard" : "/(client)/home");
       } else {
-        router.replace("/(auth)/onboarding");
+        router.replace("/(auth)/discover");
       }
     };
 

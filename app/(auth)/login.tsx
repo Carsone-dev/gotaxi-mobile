@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   View,
   Text,
@@ -40,7 +41,17 @@ export default function LoginScreen() {
     try {
       await login(data.telephone, data.password);
       const { isChauffeurMode } = useAuthStore.getState();
-      router.replace(isChauffeurMode ? "/(chauffeur)/dashboard" : "/(client)/home");
+      if (isChauffeurMode) {
+        router.replace("/(chauffeur)/dashboard");
+      } else {
+        const pendingVoyageId = await AsyncStorage.getItem("@pending_voyage_id");
+        if (pendingVoyageId) {
+          await AsyncStorage.removeItem("@pending_voyage_id");
+          router.replace(`/(client)/voyages/${pendingVoyageId}` as any);
+        } else {
+          router.replace("/(client)/home");
+        }
+      }
     } catch (e) {
       const code = getErrorCode(e);
       if (code === "INVALID_CREDENTIALS") {

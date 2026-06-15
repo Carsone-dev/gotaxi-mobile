@@ -117,4 +117,37 @@ export const voyagesApi = {
     });
     return data.items ?? [];
   },
+
+  // ── Public (sans authentification) ──────────────────────────────────────────
+
+  publicRecent: async (params?: {
+    ville_depart?: string;
+    ville_arrivee?: string;
+    date_depart?: string;
+    accepte_colis?: boolean;
+    page?: number;
+    size?: number;
+  }): Promise<VoyageSearchResult> => {
+    const { data } = await apiClient.get<VoyageSearchResult>("/public/voyages", { params });
+    return data;
+  },
+
+  publicSearch: async (params: {
+    ville_depart: string;
+    ville_arrivee: string;
+    date_depart: string;
+    nombre_places?: number;
+    prix_max?: number;
+    sort_by?: string;
+    page?: number;
+    size?: number;
+  }): Promise<VoyageSearchResult> => {
+    const { data } = await apiClient.get<VoyageSearchResult>("/public/voyages/search", { params });
+    return data;
+  },
+
+  publicVilles: async (): Promise<string[]> => {
+    const { data } = await apiClient.get<{ villes: string[] }>("/public/villes");
+    return data.villes;
+  },
 };

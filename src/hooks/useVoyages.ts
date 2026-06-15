@@ -121,3 +121,35 @@ export const useVoyageReservations = (id: string, statut?: ReservationStatus, en
     staleTime: 15_000,
     refetchInterval: 30_000,
   });
+
+// ── Public (sans authentification) ──────────────────────────────────────────
+
+export const usePublicVoyages = (params?: {
+  ville_depart?: string;
+  ville_arrivee?: string;
+  date_depart?: string;
+  accepte_colis?: boolean;
+}) =>
+  useQuery({
+    queryKey: ["public", "voyages", params ?? {}],
+    queryFn: () => voyagesApi.publicRecent(params),
+    staleTime: 2 * 60_000,
+  });
+
+export const usePublicSearchVoyages = (
+  params: { ville_depart: string; ville_arrivee: string; date_depart: string },
+  enabled = true,
+) =>
+  useQuery({
+    queryKey: ["public", "voyages", "search", params],
+    queryFn: () => voyagesApi.publicSearch(params),
+    enabled: enabled && !!params.ville_depart && !!params.ville_arrivee && !!params.date_depart,
+    staleTime: 60_000,
+  });
+
+export const usePublicVilles = () =>
+  useQuery({
+    queryKey: ["public", "villes"],
+    queryFn: voyagesApi.publicVilles,
+    staleTime: 30 * 60_000,
+  });
