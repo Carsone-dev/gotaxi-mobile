@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   FlatList,
   Pressable,
   ActivityIndicator,
@@ -747,12 +746,8 @@ export default function VoyageDetailChauffeurScreen() {
         </View>
       </View>
 
-      {/* ── Résumé fixe (scroll interne si besoin sur petits écrans) ── */}
-      <ScrollView
-        style={styles.summaryScroll}
-        contentContainerStyle={styles.summaryContent}
-        showsVerticalScrollIndicator={false}
-      >
+      {/* ── Résumé fixe (non scrollable) ── */}
+      <View style={styles.summaryContent}>
         {/* Route card */}
         <View style={styles.routeCard}>
           <View style={styles.routePoint}>
@@ -873,7 +868,7 @@ export default function VoyageDetailChauffeurScreen() {
             </View>
           </View>
         )}
-      </ScrollView>
+      </View>
 
       {/* ── Onglets Passagers / Colis ── */}
       {showTabs ? (
@@ -909,7 +904,7 @@ export default function VoyageDetailChauffeurScreen() {
             )}
           </View>
 
-          {/* ── Contenu de l'onglet actif ── */}
+          {/* ── Contenu de l'onglet actif (seule zone scrollable) ── */}
           {activeTab === "passagers" ? (
             resaError ? (
               <View style={styles.errorRow}>
@@ -1002,11 +997,11 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: spacing["2xl"],
-    paddingTop: 56,
-    paddingBottom: spacing.xl,
+    paddingHorizontal: spacing.lg,
+    paddingTop: 48,
+    paddingBottom: spacing.sm,
     backgroundColor: colors.white,
-    gap: spacing.md,
+    gap: spacing.sm,
     ...shadows.sm,
   },
   backBtn: {
@@ -1037,120 +1032,121 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.sm,
     fontFamily: typography.fontFamily.semiBold,
   },
-  summaryScroll: { flexGrow: 0, flexShrink: 1 },
-  summaryContent: { paddingBottom: spacing.sm },
+  summaryContent: { paddingBottom: 0 },
   routeCard: {
     backgroundColor: colors.white,
-    margin: spacing["2xl"],
-    borderRadius: radii.xl,
-    padding: spacing.xl,
-    gap: spacing.sm,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.md,
+    borderRadius: radii.lg,
+    padding: spacing.md,
+    gap: 4,
     ...shadows.sm,
   },
   routePoint: {
     flexDirection: "row",
     alignItems: "flex-start",
-    gap: spacing.md,
+    gap: spacing.sm,
   },
   dot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
     marginTop: 4,
   },
-  routeTextBlock: { flex: 1, gap: 2 },
+  routeTextBlock: { flex: 1, gap: 0 },
   routeLabel: {
-    fontSize: typography.fontSize.xs,
+    fontSize: 9,
     fontFamily: typography.fontFamily.semiBold,
     color: colors.textMuted,
-    letterSpacing: 1,
+    letterSpacing: 0.5,
   },
   routeCity: {
-    fontSize: typography.fontSize.lg,
+    fontSize: typography.fontSize.base,
     fontFamily: typography.fontFamily.bold,
     color: colors.textPrimary,
   },
   routeAddress: {
-    fontSize: typography.fontSize.sm,
+    fontSize: typography.fontSize.xs,
     fontFamily: typography.fontFamily.regular,
     color: colors.textSecondary,
   },
   routeConnector: {
-    paddingLeft: 5,
-    paddingVertical: spacing.xs,
+    paddingLeft: 3,
+    paddingVertical: 2,
   },
   routeLine: {
     width: 2,
-    height: 20,
+    height: 10,
     backgroundColor: colors.border,
     marginLeft: 0,
   },
   infoCard: {
     backgroundColor: colors.white,
-    marginHorizontal: spacing["2xl"],
-    marginBottom: spacing["2xl"],
-    borderRadius: radii.xl,
-    padding: spacing.xl,
-    gap: spacing.lg,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.sm,
+    borderRadius: radii.lg,
+    padding: spacing.md,
+    gap: spacing.sm,
     ...shadows.sm,
   },
   infoGrid: {
     flexDirection: "row",
     alignItems: "center",
   },
-  infoCell: { flex: 1, alignItems: "center", gap: 2 },
-  infoDivider: { width: 1, height: 40, backgroundColor: colors.border },
+  infoCell: { flex: 1, alignItems: "center", gap: 1 },
+  infoDivider: { width: 1, height: 28, backgroundColor: colors.border },
   infoCellLabel: {
-    fontSize: typography.fontSize.xs,
+    fontSize: 9,
     fontFamily: typography.fontFamily.regular,
     color: colors.textMuted,
     textTransform: "uppercase",
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
   },
   infoCellValue: {
-    fontSize: typography.fontSize.base,
+    fontSize: typography.fontSize.sm,
     fontFamily: typography.fontFamily.bold,
     color: colors.textPrimary,
   },
   infoCellSub: {
-    fontSize: typography.fontSize.xs,
+    fontSize: 9,
     fontFamily: typography.fontFamily.regular,
     color: colors.textMuted,
   },
-  optionsRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
+  optionsRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.xs },
   chip: {
     backgroundColor: colors.surface,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
     borderRadius: radii.full,
     borderWidth: 1,
     borderColor: colors.border,
   },
   chipText: {
-    fontSize: typography.fontSize.sm,
+    fontSize: typography.fontSize.xs,
     fontFamily: typography.fontFamily.medium,
     color: colors.textSecondary,
   },
   actionsCard: {
     backgroundColor: colors.white,
-    marginHorizontal: spacing["2xl"],
-    marginBottom: spacing["2xl"],
-    borderRadius: radii.xl,
-    padding: spacing.xl,
-    gap: spacing.md,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.sm,
+    marginBottom: spacing.sm,
+    borderRadius: radii.lg,
+    padding: spacing.sm,
+    gap: spacing.sm,
     ...shadows.sm,
   },
-  actionsRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.md },
+  actionsRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   actionBtn: {
     flex: 1,
-    paddingVertical: spacing.md,
+    paddingVertical: spacing.sm,
     borderRadius: radii.md,
     alignItems: "center",
     justifyContent: "center",
-    minHeight: 44,
+    minHeight: 36,
   },
   actionBtnText: {
-    fontSize: typography.fontSize.sm,
+    fontSize: typography.fontSize.xs,
     fontFamily: typography.fontFamily.semiBold,
     color: colors.white,
   },
@@ -1161,8 +1157,8 @@ const styles = StyleSheet.create({
   tabBar: {
     flexDirection: "row",
     backgroundColor: colors.white,
-    paddingHorizontal: spacing["2xl"],
-    gap: spacing.xl,
+    paddingHorizontal: spacing.lg,
+    gap: spacing.lg,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -1170,7 +1166,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.xs,
-    paddingVertical: spacing.md,
+    paddingVertical: spacing.sm,
     borderBottomWidth: 2,
     borderBottomColor: "transparent",
   },
@@ -1197,8 +1193,8 @@ const styles = StyleSheet.create({
   },
   listArea: { flex: 1, backgroundColor: colors.surface },
   listContent: {
-    padding: spacing["2xl"],
-    gap: spacing.md,
+    padding: spacing.lg,
+    gap: spacing.sm,
     flexGrow: 1,
   },
   cancelledNotice: {
