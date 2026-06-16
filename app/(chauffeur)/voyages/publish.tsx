@@ -16,6 +16,7 @@ import {
   Image,
 } from "react-native";
 import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
+import { Ionicons } from "@expo/vector-icons";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import { router } from "expo-router";
@@ -262,6 +263,15 @@ export default function PublishVoyageScreen() {
   const [cityTarget, setCityTarget] = useState<"depart" | "arrivee" | null>(null);
   const [gareTarget, setGareTarget] = useState<"depart" | "arrivee" | null>(null);
 
+  const handleSwapItineraire = () => {
+    setVilleDepart(villeArrivee);
+    setVilleArrivee(villeDepart);
+    setVilleIdDepart(villeIdArrivee);
+    setVilleIdArrivee(villeIdDepart);
+    setGareDepart(gareArrivee);
+    setGareArrivee(gareDepart);
+  };
+
   const activeVehicules = vehicules?.filter((v) => v.actif) ?? [];
   const selectedVehicule = activeVehicules.find((v) => v.id === vehiculeId);
   const vehiculeCapacity: number = selectedVehicule?.nombre_places ?? 4;
@@ -481,6 +491,7 @@ export default function PublishVoyageScreen() {
               gareArrivee={gareArrivee}
               onOpenCity={(target) => setCityTarget(target)}
               onOpenGare={(target) => setGareTarget(target)}
+              onSwap={handleSwapItineraire}
             />
           )}
           {step === 2 && (
@@ -811,14 +822,16 @@ const vehStyles = StyleSheet.create({
 // ─── Étape 2 : Itinéraire ─────────────────────────────────────────────────────
 
 function StepItineraire({
-  villeDepart, villeArrivee, gareDepart, gareArrivee, onOpenCity, onOpenGare,
+  villeDepart, villeArrivee, gareDepart, gareArrivee, onOpenCity, onOpenGare, onSwap,
 }: {
   villeDepart: string; villeArrivee: string;
   gareDepart: GareRead | null; gareArrivee: GareRead | null;
   onOpenCity: (t: "depart" | "arrivee") => void;
   onOpenGare: (t: "depart" | "arrivee") => void;
+  onSwap: () => void;
 }) {
   const sameGare = !!(gareDepart && gareArrivee && gareDepart.id === gareArrivee.id);
+  const canSwap = !!(villeDepart || villeArrivee || gareDepart || gareArrivee);
 
   return (
     <View style={stepStyles.container}>
@@ -827,75 +840,92 @@ function StepItineraire({
       <View style={itinStyles.card}>
 
         {/* ── Départ ── */}
-        <View style={itinStyles.section}>
-          <View style={itinStyles.rail}>
-            <View style={itinStyles.dotDepart} />
-            <View style={itinStyles.line} />
+        <View style={itinStyles.leg}>
+          <View style={itinStyles.railCol}>
+            <View style={[itinStyles.badge, itinStyles.badgeDepart]}>
+              <Ionicons name="location" size={14} color={colors.white} />
+            </View>
+            <View style={itinStyles.connector} />
           </View>
-          <View style={itinStyles.fields}>
-            <Text style={itinStyles.sectionLabel}>DÉPART</Text>
+          <View style={itinStyles.legFields}>
+            <Text style={itinStyles.legLabel}>POINT DE DÉPART</Text>
             <Pressable
               style={[itinStyles.cityBtn, !!villeDepart && itinStyles.cityBtnFilled]}
               onPress={() => onOpenCity("depart")}
             >
-              <Text style={[itinStyles.cityName, !villeDepart && itinStyles.cityPlaceholder]}>
+              <Text style={[itinStyles.cityName, !villeDepart && itinStyles.cityPlaceholder]} numberOfLines={1}>
                 {villeDepart || "Choisir la ville"}
               </Text>
-              <Text style={itinStyles.chevron}>▼</Text>
+              <Ionicons name="chevron-down" size={16} color={villeDepart ? colors.primary : colors.textMuted} />
             </Pressable>
             <Pressable
               style={[itinStyles.gareBtn, !!gareDepart && itinStyles.gareBtnFilled, !villeDepart && itinStyles.gareBtnDisabled]}
               onPress={() => villeDepart && onOpenGare("depart")}
               disabled={!villeDepart}
             >
-              <Text style={[itinStyles.gareName, !gareDepart && itinStyles.garePlaceholder]}>
+              <Ionicons name="business" size={14} color={gareDepart ? colors.primary : colors.textMuted} />
+              <Text style={[itinStyles.gareName, !gareDepart && itinStyles.garePlaceholder]} numberOfLines={1}>
                 {gareDepart ? gareDepart.nom : "Choisir la gare de départ"}
               </Text>
-              <Text style={itinStyles.chevron}>▼</Text>
+              <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
             </Pressable>
           </View>
         </View>
 
-        {/* ── Séparateur central ── */}
-        <View style={itinStyles.midRow}>
-          <View style={itinStyles.railMid}>
-            <View style={itinStyles.lineMid} />
+        {/* ── Bouton inverser ── */}
+        <View style={itinStyles.swapRow}>
+          <View style={itinStyles.railCol}>
+            <View style={itinStyles.connector} />
           </View>
-          <View style={itinStyles.distancePill}>
-            <Text style={itinStyles.distancePillTxt}>🚗  trajet</Text>
-          </View>
+          <Pressable
+            style={[itinStyles.swapBtn, !canSwap && itinStyles.swapBtnDisabled]}
+            onPress={onSwap}
+            disabled={!canSwap}
+          >
+            <Ionicons name="swap-vertical" size={15} color={colors.primary} />
+            <Text style={itinStyles.swapTxt}>Inverser</Text>
+          </Pressable>
         </View>
 
         {/* ── Arrivée ── */}
-        <View style={itinStyles.section}>
-          <View style={itinStyles.rail}>
-            <View style={[itinStyles.dotArrivee, sameGare && itinStyles.dotError]} />
+        <View style={itinStyles.leg}>
+          <View style={itinStyles.railCol}>
+            <View style={[itinStyles.badge, itinStyles.badgeArrivee, sameGare && itinStyles.badgeError]}>
+              <Ionicons name="flag" size={13} color={colors.white} />
+            </View>
           </View>
-          <View style={itinStyles.fields}>
-            <Text style={itinStyles.sectionLabel}>ARRIVÉE</Text>
+          <View style={itinStyles.legFields}>
+            <Text style={itinStyles.legLabel}>POINT D'ARRIVÉE</Text>
             <Pressable
               style={[itinStyles.cityBtn, !!villeArrivee && itinStyles.cityBtnFilled]}
               onPress={() => onOpenCity("arrivee")}
             >
-              <Text style={[itinStyles.cityName, !villeArrivee && itinStyles.cityPlaceholder]}>
+              <Text style={[itinStyles.cityName, !villeArrivee && itinStyles.cityPlaceholder]} numberOfLines={1}>
                 {villeArrivee || "Choisir la ville"}
               </Text>
-              <Text style={itinStyles.chevron}>▼</Text>
+              <Ionicons name="chevron-down" size={16} color={villeArrivee ? colors.primary : colors.textMuted} />
             </Pressable>
             <Pressable
               style={[itinStyles.gareBtn, !!gareArrivee && itinStyles.gareBtnFilled, !villeArrivee && itinStyles.gareBtnDisabled]}
               onPress={() => villeArrivee && onOpenGare("arrivee")}
               disabled={!villeArrivee}
             >
-              <Text style={[itinStyles.gareName, !gareArrivee && itinStyles.garePlaceholder]}>
+              <Ionicons name="business" size={14} color={gareArrivee ? colors.primary : colors.textMuted} />
+              <Text style={[itinStyles.gareName, !gareArrivee && itinStyles.garePlaceholder]} numberOfLines={1}>
                 {gareArrivee ? gareArrivee.nom : "Choisir la gare d'arrivée"}
               </Text>
-              <Text style={itinStyles.chevron}>▼</Text>
+              <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
             </Pressable>
           </View>
         </View>
 
       </View>
+
+      {sameGare && (
+        <Text style={stepStyles.errorNote}>
+          La gare de départ et la gare d'arrivée sont identiques.
+        </Text>
+      )}
 
     </View>
   );
@@ -911,60 +941,47 @@ const itinStyles = StyleSheet.create({
     paddingRight: spacing.xl,
     ...shadows.sm,
   },
-  section: {
+  leg: {
     flexDirection: "row",
     alignItems: "flex-start",
   },
-  // ── Rail vertical (tiret + point) ──
-  rail: {
+  // ── Rail vertical (badge + connecteur) ──
+  railCol: {
     width: RAIL_W,
     alignItems: "center",
-    paddingTop: 26,
+    paddingTop: 2,
   },
-  railMid: {
-    width: RAIL_W,
+  badge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     alignItems: "center",
-    paddingTop: 0,
-  },
-  dotDepart: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: colors.primary,
+    justifyContent: "center",
     zIndex: 1,
+    ...shadows.sm,
   },
-  dotArrivee: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: colors.error,
-    borderWidth: 2,
-    borderColor: colors.error,
-    zIndex: 1,
-  },
-  dotError: { backgroundColor: colors.error },
-  line: {
+  badgeDepart: { backgroundColor: colors.primary },
+  badgeArrivee: { backgroundColor: colors.error },
+  badgeError: { backgroundColor: colors.error },
+  connector: {
     width: 2,
     flex: 1,
+    minHeight: 28,
     backgroundColor: colors.border,
     marginTop: 4,
   },
-  lineMid: {
-    width: 2,
-    height: 36,
-    backgroundColor: colors.border,
-  },
   // ── Champs ──
-  fields: {
+  legFields: {
     flex: 1,
     gap: spacing.sm,
     paddingBottom: spacing.lg,
   },
-  sectionLabel: {
+  legLabel: {
     fontSize: typography.fontSize.xs,
     fontFamily: typography.fontFamily.bold,
-    color: colors.textMuted,
+    color: colors.textSecondary,
     letterSpacing: 1.2,
+    marginTop: 4,
     marginBottom: -2,
   },
   cityBtn: {
@@ -982,29 +999,21 @@ const itinStyles = StyleSheet.create({
     borderColor: colors.primary,
     backgroundColor: `${colors.primary}08`,
   },
-  cityBtnError: {
-    borderColor: colors.error,
-    backgroundColor: colors.errorBg,
-  },
   cityName: {
     fontSize: typography.fontSize.lg,
     fontFamily: typography.fontFamily.bold,
     color: colors.textPrimary,
+    flex: 1,
   },
   cityPlaceholder: {
     fontSize: typography.fontSize.base,
     fontFamily: typography.fontFamily.regular,
-    color: colors.textMuted,
-  },
-  cityError: { color: colors.error },
-  chevron: {
-    fontSize: 10,
-    color: colors.textMuted,
+    color: colors.textSecondary,
   },
   gareBtn: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    gap: spacing.sm,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radii.md,
@@ -1027,31 +1036,30 @@ const itinStyles = StyleSheet.create({
   },
   garePlaceholder: {
     fontFamily: typography.fontFamily.regular,
-    color: colors.textMuted,
+    color: colors.textSecondary,
   },
-  // ── Séparateur central ──
-  midRow: {
+  // ── Inverser ──
+  swapRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginVertical: -spacing.xs,
+    marginVertical: -spacing.sm,
   },
-  distancePill: {
-    flex: 1,
+  swapBtn: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: colors.surface,
+    gap: 5,
+    backgroundColor: `${colors.primary}10`,
     borderRadius: radii.full,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    alignSelf: "center",
+    paddingVertical: 6,
     borderWidth: 1,
-    borderColor: colors.border,
-    marginRight: spacing.xl,
+    borderColor: `${colors.primary}30`,
   },
-  distancePillTxt: {
+  swapBtnDisabled: { opacity: 0.4 },
+  swapTxt: {
     fontSize: typography.fontSize.xs,
-    fontFamily: typography.fontFamily.medium,
-    color: colors.textMuted,
+    fontFamily: typography.fontFamily.bold,
+    color: colors.primary,
   },
 });
 
