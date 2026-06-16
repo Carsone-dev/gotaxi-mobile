@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueries, useMutation, useQueryClient } from "@tanstack/react-query";
 import { colisApi } from "@/src/api/endpoints/colis";
 import { voyagesApi } from "@/src/api/endpoints/voyages";
 import type { ColisCreatePayload } from "@/src/api/types";
@@ -53,6 +53,25 @@ export const useVoyageColis = (voyageId: string) =>
     enabled: !!voyageId,
     staleTime: 30_000,
   });
+
+// Nombre réel de colis EN_ATTENTE à travers plusieurs voyages (ex: dashboard).
+export const useColisEnAttenteCount = (voyageIds: string[]) => {
+  const results = useQueries({
+    queries: voyageIds.map((voyageId) => ({
+      queryKey: [KEY, "voyage", voyageId],
+      queryFn: () => colisApi.voyageColis(voyageId),
+      staleTime: 30_000,
+    })),
+  });
+
+  const count = results.reduce(
+    (sum, r) => sum + (r.data ?? []).filter((c) => c.statut === "EN_ATTENTE").length,
+    0,
+  );
+  const isLoading = results.some((r) => r.isLoading);
+
+  return { count, isLoading };
+};
 
 export const useConfirmerColis = () => {
   const qc = useQueryClient();

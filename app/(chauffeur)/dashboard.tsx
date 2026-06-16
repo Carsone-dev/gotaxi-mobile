@@ -19,6 +19,7 @@ import {
   useGoOnline,
   useGoOffline,
 } from "@/src/hooks/useChauffeur";
+import { useColisEnAttenteCount } from "@/src/hooks/useColis";
 import { getErrorCode, getErrorMessage } from "@/src/utils/error-handler";
 import { useIncomingReservations } from "@/src/hooks/useReservations";
 import { useMyVoyages } from "@/src/hooks/useVoyages";
@@ -243,11 +244,18 @@ export default function DashboardScreen() {
 
   const isOnline = stats?.en_ligne ?? false;
   const pendingCount = incoming?.length ?? 0;
-  const voyagesColisActifs = (mesVoyages ?? []).filter(
-    (v) =>
-      v.accepte_colis &&
-      (v.statut === "PUBLIE" || v.statut === "COMPLET" || v.statut === "EN_COURS")
-  ).length;
+  const voyagesAvecColisActifIds = useMemo(
+    () =>
+      (mesVoyages ?? [])
+        .filter(
+          (v) =>
+            v.accepte_colis &&
+            (v.statut === "PUBLIE" || v.statut === "COMPLET" || v.statut === "EN_COURS")
+        )
+        .map((v) => v.id),
+    [mesVoyages]
+  );
+  const { count: colisEnAttenteCount } = useColisEnAttenteCount(voyagesAvecColisActifIds);
 
   const greeting = useMemo(() => getGreeting(), []);
   const photoUrl = user?.photo_url ?? null;
@@ -424,9 +432,9 @@ export default function DashboardScreen() {
           <QuickBtn
             icon="cube"
             label="Colis"
-            iconBg={voyagesColisActifs > 0 ? `${colors.primary}18` : colors.surface}
-            iconColor={voyagesColisActifs > 0 ? colors.primary : colors.textSecondary}
-            badge={voyagesColisActifs > 0 ? voyagesColisActifs : undefined}
+            iconBg={colisEnAttenteCount > 0 ? `${colors.primary}18` : colors.surface}
+            iconColor={colisEnAttenteCount > 0 ? colors.primary : colors.textSecondary}
+            badge={colisEnAttenteCount > 0 ? colisEnAttenteCount : undefined}
             onPress={() => router.push("/(chauffeur)/colis" as any)}
           />
         </View>
