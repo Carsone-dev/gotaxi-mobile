@@ -24,6 +24,7 @@ import type { Reservation, ReservationStatus } from "@/src/api/types";
 type Tab = "pending" | "confirmed";
 
 const STATUS_COLOR: Record<ReservationStatus, string> = {
+  EN_ATTENTE_PAIEMENT: colors.warning,
   EN_ATTENTE: colors.warning,
   CONFIRMEE: colors.success,
   REFUSEE: colors.error,
@@ -32,6 +33,7 @@ const STATUS_COLOR: Record<ReservationStatus, string> = {
 };
 
 const STATUS_LABEL: Record<ReservationStatus, string> = {
+  EN_ATTENTE_PAIEMENT: "Paiement en attente",
   EN_ATTENTE: "En attente",
   CONFIRMEE: "Confirmée",
   REFUSEE: "Refusée",

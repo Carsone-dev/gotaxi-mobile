@@ -27,6 +27,7 @@ import type { Reservation, ReservationStatus } from "@/src/api/types";
 
 // ── Config statuts ────────────────────────────────────────────────────────────
 const STATUS_CFG: Record<ReservationStatus, { label: string; color: string; bg: string; icon: string }> = {
+  EN_ATTENTE_PAIEMENT: { label: "Paiement en attente", color: colors.warningText, bg: colors.warningBg, icon: "💳" },
   EN_ATTENTE: { label: "En attente",  color: colors.warningText,    bg: colors.warningBg,  icon: "⏳" },
   CONFIRMEE:  { label: "Confirmée",   color: colors.success,        bg: colors.successBg,  icon: "✅" },
   REFUSEE:    { label: "Refusée",     color: colors.error,          bg: colors.errorBg,    icon: "❌" },

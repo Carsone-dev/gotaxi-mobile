@@ -119,7 +119,7 @@ export const useStatutPaiementColis = (id: string, enabled: boolean) => {
     queryKey: [KEY, id, "statut-paiement"],
     queryFn: () => colisApi.statutPaiement(id),
     enabled: !!id && enabled,
-    refetchInterval: (query) => {
+    refetchInterval: (query: any) => {
       const statut = query.state.data?.statut;
       if (statut === "confirme" || statut === "echec" || statut === "expire") return false;
       return 5_000;

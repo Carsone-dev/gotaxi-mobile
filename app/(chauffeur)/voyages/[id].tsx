@@ -597,6 +597,7 @@ const STATUS_COLOR: Record<VoyageStatus, string> = {
 };
 
 const RESA_STATUS_COLOR: Record<ReservationStatus, string> = {
+  EN_ATTENTE_PAIEMENT: colors.warning,
   EN_ATTENTE: colors.warning,
   CONFIRMEE: colors.success,
   REFUSEE: colors.error,
@@ -605,6 +606,7 @@ const RESA_STATUS_COLOR: Record<ReservationStatus, string> = {
 };
 
 const RESA_STATUS_LABEL: Record<ReservationStatus, string> = {
+  EN_ATTENTE_PAIEMENT: "Paiement en attente",
   EN_ATTENTE: "En attente",
   CONFIRMEE: "Confirmée",
   REFUSEE: "Refusée",

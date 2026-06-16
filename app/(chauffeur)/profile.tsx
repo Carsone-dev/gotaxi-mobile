@@ -367,14 +367,14 @@ export default function ChauffeurProfileScreen() {
           <View style={styles.statsDivider} />
           <StatPill
             icon="star"
-            value={formatNote(chauffeur?.note_moyenne)}
+            value={formatNote(user?.note_moyenne)}
             label="Note"
           />
           <View style={styles.statsDivider} />
           <StatPill
-            icon="cube"
-            value={chauffeur?.accepte_colis ? "Oui" : "Non"}
-            label="Colis"
+            icon="chatbubble-ellipses"
+            value={user?.nombre_avis != null ? String(user.nombre_avis) : "0"}
+            label="Avis"
           />
         </View>
       </View>
