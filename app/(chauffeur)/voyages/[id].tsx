@@ -1,9 +1,10 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
+  FlatList,
   Pressable,
   ActivityIndicator,
   RefreshControl,
@@ -639,6 +640,14 @@ export default function VoyageDetailChauffeurScreen() {
   const { mutateAsync: endVoyage, isPending: ending } = useEndVoyage();
   const { mutateAsync: cancelVoyage, isPending: cancelling } = useCancelVoyage();
 
+  const [activeTab, setActiveTab] = useState<"passagers" | "colis">("passagers");
+
+  useEffect(() => {
+    if (activeTab === "colis" && !voyage?.accepte_colis) {
+      setActiveTab("passagers");
+    }
+  }, [activeTab, voyage?.accepte_colis]);
+
   const handleColisAction = () => { refetchColis(); };
   const handleResaAction = () => { refetchReservations(); };
 
@@ -708,15 +717,23 @@ export default function VoyageDetailChauffeurScreen() {
   const canStart = voyage.statut === "PUBLIE" || voyage.statut === "COMPLET";
   const canEnd = voyage.statut === "EN_COURS";
   const canCancel = voyage.statut === "PUBLIE" || voyage.statut === "COMPLET";
+  const showTabs = voyage.statut !== "ANNULE";
+  const showColisTab = showTabs && voyage.accepte_colis;
+  const pendingResaCount = reservations?.filter((r) => r.statut === "EN_ATTENTE").length ?? 0;
+  const pendingColisCount = colisList?.filter((c) => c.statut === "EN_ATTENTE").length ?? 0;
+
+  const activeList = activeTab === "colis" ? colisList : reservations;
+  const activeLoading = activeTab === "colis" ? colisLoading : resaLoading;
+  const isRefreshing = activeTab === "colis" ? false : isRefetching;
+  const handleRefresh = () => {
+    refetch();
+    if (activeTab === "colis") refetchColis();
+    else refetchReservations();
+  };
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.content}
-      refreshControl={
-        <RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={colors.primary} />
-      }
-    >
+    <View style={styles.screen}>
+      {/* ── En-tête fixe ── */}
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} style={styles.backBtn}>
           <Text style={styles.backBtnText}>←</Text>
@@ -729,212 +746,241 @@ export default function VoyageDetailChauffeurScreen() {
         </View>
       </View>
 
-      {/* Route card */}
-      <View style={styles.routeCard}>
-        <View style={styles.routePoint}>
-          <View style={[styles.dot, { backgroundColor: colors.primary }]} />
-          <View style={styles.routeTextBlock}>
-            <Text style={styles.routeLabel}>DÉPART</Text>
-            <Text style={styles.routeCity}>{voyage.ville_depart}</Text>
-            <Text style={styles.routeAddress}>{voyage.point_depart}</Text>
-          </View>
-        </View>
-        <View style={styles.routeConnector}>
-          <View style={styles.routeLine} />
-        </View>
-        <View style={styles.routePoint}>
-          <View style={[styles.dot, { backgroundColor: colors.error }]} />
-          <View style={styles.routeTextBlock}>
-            <Text style={styles.routeLabel}>ARRIVÉE</Text>
-            <Text style={styles.routeCity}>{voyage.ville_arrivee}</Text>
-            <Text style={styles.routeAddress}>{voyage.point_arrivee}</Text>
-          </View>
-        </View>
-      </View>
-
-      {/* Info grid */}
-      <View style={styles.infoCard}>
-        <View style={styles.infoGrid}>
-          <View style={styles.infoCell}>
-            <Text style={styles.infoCellLabel}>Date</Text>
-            <Text style={styles.infoCellValue}>{formatDate(voyage.date_depart)}</Text>
-            <Text style={styles.infoCellSub}>{formatTime(voyage.date_depart)}</Text>
-          </View>
-          <View style={styles.infoDivider} />
-          <View style={styles.infoCell}>
-            <Text style={styles.infoCellLabel}>Prix / place</Text>
-            <Text style={styles.infoCellValue}>{formatFCFA(voyage.prix_par_place)}</Text>
-          </View>
-          <View style={styles.infoDivider} />
-          <View style={styles.infoCell}>
-            <Text style={styles.infoCellLabel}>Places</Text>
-            <Text style={styles.infoCellValue}>
-              {voyage.nombre_places_restantes}/{voyage.nombre_places_total}
-            </Text>
-            <Text style={styles.infoCellSub}>restantes</Text>
-          </View>
-        </View>
-
-        <View style={styles.optionsRow}>
-          {voyage.climatise && (
-            <View style={styles.chip}>
-              <Text style={styles.chipText}>❄ Climatisé</Text>
+      {/* ── Résumé fixe (scroll interne si besoin sur petits écrans) ── */}
+      <ScrollView
+        style={styles.summaryScroll}
+        contentContainerStyle={styles.summaryContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Route card */}
+        <View style={styles.routeCard}>
+          <View style={styles.routePoint}>
+            <View style={[styles.dot, { backgroundColor: colors.primary }]} />
+            <View style={styles.routeTextBlock}>
+              <Text style={styles.routeLabel}>DÉPART</Text>
+              <Text style={styles.routeCity}>{voyage.ville_depart}</Text>
+              <Text style={styles.routeAddress}>{voyage.point_depart}</Text>
             </View>
-          )}
-          {voyage.accepte_colis && (
-            <View style={styles.chip}>
-              <Text style={styles.chipText}>📦 Colis OK</Text>
+          </View>
+          <View style={styles.routeConnector}>
+            <View style={styles.routeLine} />
+          </View>
+          <View style={styles.routePoint}>
+            <View style={[styles.dot, { backgroundColor: colors.error }]} />
+            <View style={styles.routeTextBlock}>
+              <Text style={styles.routeLabel}>ARRIVÉE</Text>
+              <Text style={styles.routeCity}>{voyage.ville_arrivee}</Text>
+              <Text style={styles.routeAddress}>{voyage.point_arrivee}</Text>
             </View>
-          )}
-          {voyage.non_fumeur && (
-            <View style={styles.chip}>
-              <Text style={styles.chipText}>🚭 Non-fumeur</Text>
-            </View>
-          )}
-        </View>
-      </View>
-
-      {/* Actions */}
-      {(canStart || canEnd || canCancel) && (
-        <View style={styles.actionsCard}>
-          <Text style={styles.sectionTitle}>Actions</Text>
-          <View style={styles.actionsRow}>
-            {canStart && (
-              <Pressable
-                style={[styles.actionBtn, { backgroundColor: colors.primary }]}
-                onPress={handleStart}
-                disabled={starting}
-              >
-                {starting ? (
-                  <ActivityIndicator color="white" size="small" />
-                ) : (
-                  <Text style={styles.actionBtnText}>▶  Démarrer</Text>
-                )}
-              </Pressable>
-            )}
-            {canEnd && (
-              <Pressable
-                style={[styles.actionBtn, { backgroundColor: colors.info }]}
-                onPress={handleEnd}
-                disabled={ending}
-              >
-                {ending ? (
-                  <ActivityIndicator color="white" size="small" />
-                ) : (
-                  <Text style={styles.actionBtnText}>■  Terminer</Text>
-                )}
-              </Pressable>
-            )}
-            {canEnd && (
-              <Pressable
-                style={[styles.actionBtn, styles.navBtn]}
-                onPress={() =>
-                  router.push({
-                    pathname: "/(chauffeur)/voyages/navigation" as any,
-                    params: { voyage_id: id },
-                  })
-                }
-              >
-                <Text style={styles.actionBtnText}>🗺️  Navigation</Text>
-              </Pressable>
-            )}
-            {canCancel && (
-              <Pressable
-                style={[styles.actionBtn, { backgroundColor: colors.error }]}
-                onPress={handleCancel}
-                disabled={cancelling}
-              >
-                <Text style={styles.actionBtnText}>✕  Annuler</Text>
-              </Pressable>
-            )}
           </View>
         </View>
-      )}
 
-      {/* Passagers / Réservations */}
-      {voyage.statut !== "ANNULE" && (
-        <View style={styles.passagersCard}>
-          <View style={styles.colisSectionHeader}>
-            <Text style={styles.sectionTitle}>
-              Passagers{reservations ? ` (${reservations.length})` : ""}
-            </Text>
-            {reservations && reservations.filter((r) => r.statut === "EN_ATTENTE").length > 0 && (
-              <View style={styles.pendingBadge}>
-                <Text style={styles.pendingBadgeText}>
-                  {reservations.filter((r) => r.statut === "EN_ATTENTE").length} à valider
-                </Text>
-              </View>
-            )}
-          </View>
-          {resaLoading ? (
-            <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.md }} />
-          ) : resaError ? (
-            <View style={styles.errorRow}>
-              <Text style={styles.errorRowText}>
-                ⚠️ {(resaErrorObj as any)?.response?.data?.detail ?? (resaErrorObj as any)?.message ?? "Erreur de chargement"}
+        {/* Info grid */}
+        <View style={styles.infoCard}>
+          <View style={styles.infoGrid}>
+            <View style={styles.infoCell}>
+              <Text style={styles.infoCellLabel}>Date</Text>
+              <Text style={styles.infoCellValue}>{formatDate(voyage.date_depart)}</Text>
+              <Text style={styles.infoCellSub}>{formatTime(voyage.date_depart)}</Text>
+            </View>
+            <View style={styles.infoDivider} />
+            <View style={styles.infoCell}>
+              <Text style={styles.infoCellLabel}>Prix / place</Text>
+              <Text style={styles.infoCellValue}>{formatFCFA(voyage.prix_par_place)}</Text>
+            </View>
+            <View style={styles.infoDivider} />
+            <View style={styles.infoCell}>
+              <Text style={styles.infoCellLabel}>Places</Text>
+              <Text style={styles.infoCellValue}>
+                {voyage.nombre_places_restantes}/{voyage.nombre_places_total}
               </Text>
-              <Pressable onPress={() => refetchReservations()} style={styles.retryBtn}>
-                <Text style={styles.retryBtnText}>Réessayer</Text>
-              </Pressable>
+              <Text style={styles.infoCellSub}>restantes</Text>
             </View>
-          ) : reservations && reservations.length > 0 ? (
-            <View style={{ gap: spacing.md }}>
-              {reservations.map((r) => (
-                <PassagerCard
-                  key={r.id}
-                  reservation={r}
-                  voyageStatut={voyage.statut}
-                  onAction={handleResaAction}
-                />
-              ))}
-            </View>
-          ) : (
-            <Text style={styles.emptyText}>Aucune réservation pour ce voyage</Text>
-          )}
-        </View>
-      )}
+          </View>
 
-      {/* Colis */}
-      {voyage.accepte_colis && voyage.statut !== "ANNULE" && (
-        <View style={styles.passagersCard}>
-          <View style={styles.colisSectionHeader}>
-            <Text style={styles.sectionTitle}>
-              Colis{colisList ? ` (${colisList.length})` : ""}
-            </Text>
-            {colisList && colisList.filter((c) => c.statut === "EN_ATTENTE").length > 0 && (
-              <View style={styles.pendingBadge}>
-                <Text style={styles.pendingBadgeText}>
-                  {colisList.filter((c) => c.statut === "EN_ATTENTE").length} en attente
-                </Text>
+          <View style={styles.optionsRow}>
+            {voyage.climatise && (
+              <View style={styles.chip}>
+                <Text style={styles.chipText}>❄ Climatisé</Text>
+              </View>
+            )}
+            {voyage.accepte_colis && (
+              <View style={styles.chip}>
+                <Text style={styles.chipText}>📦 Colis OK</Text>
+              </View>
+            )}
+            {voyage.non_fumeur && (
+              <View style={styles.chip}>
+                <Text style={styles.chipText}>🚭 Non-fumeur</Text>
               </View>
             )}
           </View>
+        </View>
 
-          {colisLoading ? (
-            <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.md }} />
-          ) : colisList && colisList.length > 0 ? (
-            <View style={{ gap: spacing.md }}>
-              {colisList.map((c) => (
+        {/* Actions */}
+        {(canStart || canEnd || canCancel) && (
+          <View style={styles.actionsCard}>
+            <View style={styles.actionsRow}>
+              {canStart && (
+                <Pressable
+                  style={[styles.actionBtn, { backgroundColor: colors.primary }]}
+                  onPress={handleStart}
+                  disabled={starting}
+                >
+                  {starting ? (
+                    <ActivityIndicator color="white" size="small" />
+                  ) : (
+                    <Text style={styles.actionBtnText}>▶  Démarrer</Text>
+                  )}
+                </Pressable>
+              )}
+              {canEnd && (
+                <Pressable
+                  style={[styles.actionBtn, { backgroundColor: colors.info }]}
+                  onPress={handleEnd}
+                  disabled={ending}
+                >
+                  {ending ? (
+                    <ActivityIndicator color="white" size="small" />
+                  ) : (
+                    <Text style={styles.actionBtnText}>■  Terminer</Text>
+                  )}
+                </Pressable>
+              )}
+              {canEnd && (
+                <Pressable
+                  style={[styles.actionBtn, styles.navBtn]}
+                  onPress={() =>
+                    router.push({
+                      pathname: "/(chauffeur)/voyages/navigation" as any,
+                      params: { voyage_id: id },
+                    })
+                  }
+                >
+                  <Text style={styles.actionBtnText}>🗺️  Navigation</Text>
+                </Pressable>
+              )}
+              {canCancel && (
+                <Pressable
+                  style={[styles.actionBtn, { backgroundColor: colors.error }]}
+                  onPress={handleCancel}
+                  disabled={cancelling}
+                >
+                  <Text style={styles.actionBtnText}>✕  Annuler</Text>
+                </Pressable>
+              )}
+            </View>
+          </View>
+        )}
+      </ScrollView>
+
+      {/* ── Onglets Passagers / Colis ── */}
+      {showTabs ? (
+        <>
+          <View style={styles.tabBar}>
+            <Pressable
+              style={[styles.tabBtn, activeTab === "passagers" && styles.tabBtnActive]}
+              onPress={() => setActiveTab("passagers")}
+            >
+              <Text style={[styles.tabBtnText, activeTab === "passagers" && styles.tabBtnTextActive]}>
+                Passagers{reservations ? ` (${reservations.length})` : ""}
+              </Text>
+              {pendingResaCount > 0 && (
+                <View style={styles.tabBadge}>
+                  <Text style={styles.tabBadgeText}>{pendingResaCount}</Text>
+                </View>
+              )}
+            </Pressable>
+            {showColisTab && (
+              <Pressable
+                style={[styles.tabBtn, activeTab === "colis" && styles.tabBtnActive]}
+                onPress={() => setActiveTab("colis")}
+              >
+                <Text style={[styles.tabBtnText, activeTab === "colis" && styles.tabBtnTextActive]}>
+                  Colis{colisList ? ` (${colisList.length})` : ""}
+                </Text>
+                {pendingColisCount > 0 && (
+                  <View style={styles.tabBadge}>
+                    <Text style={styles.tabBadgeText}>{pendingColisCount}</Text>
+                  </View>
+                )}
+              </Pressable>
+            )}
+          </View>
+
+          {/* ── Contenu de l'onglet actif ── */}
+          {activeTab === "passagers" ? (
+            resaError ? (
+              <View style={styles.errorRow}>
+                <Text style={styles.errorRowText}>
+                  ⚠️ {(resaErrorObj as any)?.response?.data?.detail ?? (resaErrorObj as any)?.message ?? "Erreur de chargement"}
+                </Text>
+                <Pressable onPress={() => refetchReservations()} style={styles.retryBtn}>
+                  <Text style={styles.retryBtnText}>Réessayer</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <FlatList
+                style={styles.listArea}
+                data={reservations ?? []}
+                keyExtractor={(r) => r.id}
+                contentContainerStyle={styles.listContent}
+                refreshControl={
+                  <RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} tintColor={colors.primary} />
+                }
+                renderItem={({ item }) => (
+                  <PassagerCard
+                    reservation={item}
+                    voyageStatut={voyage.statut}
+                    onAction={handleResaAction}
+                  />
+                )}
+                ListEmptyComponent={
+                  activeLoading ? (
+                    <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.xl }} />
+                  ) : (
+                    <Text style={styles.emptyText}>Aucune réservation pour ce voyage</Text>
+                  )
+                }
+              />
+            )
+          ) : (
+            <FlatList
+              style={styles.listArea}
+              data={colisList ?? []}
+              keyExtractor={(c) => c.id}
+              contentContainerStyle={styles.listContent}
+              refreshControl={
+                <RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} tintColor={colors.primary} />
+              }
+              renderItem={({ item }) => (
                 <ColisCard
-                  key={c.id}
-                  colis={c}
+                  colis={item}
                   voyageStatut={voyage.statut}
                   onAction={handleColisAction}
                 />
-              ))}
-            </View>
-          ) : (
-            <Text style={styles.emptyText}>Aucun colis pour ce voyage</Text>
+              )}
+              ListEmptyComponent={
+                activeLoading ? (
+                  <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.xl }} />
+                ) : (
+                  <Text style={styles.emptyText}>Aucun colis pour ce voyage</Text>
+                )
+              }
+            />
           )}
+        </>
+      ) : (
+        <View style={styles.cancelledNotice}>
+          <Text style={styles.emptyText}>Ce voyage a été annulé.</Text>
         </View>
       )}
-    </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.surface },
-  content: { paddingBottom: 40 },
+  screen: { flex: 1, backgroundColor: colors.surface },
   centered: {
     flex: 1,
     alignItems: "center",
@@ -990,6 +1036,8 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.sm,
     fontFamily: typography.fontFamily.semiBold,
   },
+  summaryScroll: { flexGrow: 0, flexShrink: 1 },
+  summaryContent: { paddingBottom: spacing.sm },
   routeCard: {
     backgroundColor: colors.white,
     margin: spacing["2xl"],
@@ -1091,11 +1139,6 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     ...shadows.sm,
   },
-  sectionTitle: {
-    fontSize: typography.fontSize.lg,
-    fontFamily: typography.fontFamily.bold,
-    color: colors.textPrimary,
-  },
   actionsRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.md },
   actionBtn: {
     flex: 1,
@@ -1114,14 +1157,54 @@ const styles = StyleSheet.create({
     backgroundColor: "#1a1a2e",
     flexBasis: "100%",
   },
-  passagersCard: {
+  tabBar: {
+    flexDirection: "row",
     backgroundColor: colors.white,
-    marginHorizontal: spacing["2xl"],
-    marginBottom: spacing["2xl"],
-    borderRadius: radii.xl,
-    padding: spacing.xl,
+    paddingHorizontal: spacing["2xl"],
+    gap: spacing.xl,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  tabBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    paddingVertical: spacing.md,
+    borderBottomWidth: 2,
+    borderBottomColor: "transparent",
+  },
+  tabBtnActive: { borderBottomColor: colors.primary },
+  tabBtnText: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.semiBold,
+    color: colors.textMuted,
+  },
+  tabBtnTextActive: { color: colors.primary },
+  tabBadge: {
+    backgroundColor: colors.warningBg,
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: 4,
+    borderRadius: 9,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  tabBadgeText: {
+    fontSize: 10,
+    fontFamily: typography.fontFamily.bold,
+    color: colors.warningText,
+  },
+  listArea: { flex: 1, backgroundColor: colors.surface },
+  listContent: {
+    padding: spacing["2xl"],
     gap: spacing.md,
-    ...shadows.sm,
+    flexGrow: 1,
+  },
+  cancelledNotice: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: spacing["2xl"],
   },
   emptyText: {
     fontSize: typography.fontSize.sm,
@@ -1151,21 +1234,5 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.sm,
     fontFamily: typography.fontFamily.semiBold,
     color: colors.white,
-  },
-  colisSectionHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-  },
-  pendingBadge: {
-    backgroundColor: colors.warningBg,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 3,
-    borderRadius: radii.full,
-  },
-  pendingBadgeText: {
-    fontSize: typography.fontSize.xs,
-    fontFamily: typography.fontFamily.semiBold,
-    color: colors.warningText,
   },
 });

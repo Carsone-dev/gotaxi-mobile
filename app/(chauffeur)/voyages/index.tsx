@@ -52,60 +52,66 @@ export default function ChauffeurVoyagesScreen() {
   };
 
   const renderVoyage = ({ item: v }: { item: Voyage }) => (
-    <Pressable
-      style={styles.voyageCard}
-      onPress={() => router.push(`/(chauffeur)/voyages/${v.id}` as any)}
-    >
-      <View style={styles.cardHeader}>
-        <View style={styles.routeRow}>
-          <Text style={styles.city}>{v.ville_depart}</Text>
-          <Text style={styles.arrow}>→</Text>
-          <Text style={styles.city}>{v.ville_arrivee}</Text>
+    <View style={styles.voyageCard}>
+      <Pressable
+        style={styles.cardTapZone}
+        onPress={() => router.push(`/(chauffeur)/voyages/${v.id}` as any)}
+      >
+        <View style={styles.cardHeader}>
+          <View style={styles.routeRow}>
+            <Text style={styles.city}>{v.ville_depart}</Text>
+            <Text style={styles.arrow}>→</Text>
+            <Text style={styles.city}>{v.ville_arrivee}</Text>
+          </View>
+          <View style={[styles.badge, { backgroundColor: `${STATUS_COLOR[v.statut]}20` }]}>
+            <Text style={[styles.badgeText, { color: STATUS_COLOR[v.statut] }]}>
+              {STATUS_LABEL[v.statut]}
+            </Text>
+          </View>
         </View>
-        <View style={[styles.badge, { backgroundColor: `${STATUS_COLOR[v.statut]}20` }]}>
-          <Text style={[styles.badgeText, { color: STATUS_COLOR[v.statut] }]}>
-            {STATUS_LABEL[v.statut]}
-          </Text>
-        </View>
-      </View>
 
-      <View style={styles.infoRow}>
-        <Text style={styles.infoText}>📅 {formatDate(v.date_depart)} à {formatTime(v.date_depart)}</Text>
-      </View>
-      <View style={styles.infoRow}>
-        <Text style={styles.infoText}>💺 {v.nombre_places_restantes}/{v.nombre_places_total} places</Text>
-        <Text style={styles.infoText}>💰 {formatFCFA(v.prix_par_place)} / pers.</Text>
-      </View>
+        <View style={styles.infoRow}>
+          <Text style={styles.infoText}>📅 {formatDate(v.date_depart)} à {formatTime(v.date_depart)}</Text>
+        </View>
+        <View style={styles.infoRow}>
+          <Text style={styles.infoText}>💺 {v.nombre_places_restantes}/{v.nombre_places_total} places</Text>
+          <Text style={styles.infoText}>💰 {formatFCFA(v.prix_par_place)} / pers.</Text>
+        </View>
+      </Pressable>
 
       {(v.statut === "PUBLIE" || v.statut === "COMPLET") && (
-        <View style={styles.actionsRow}>
-          <Pressable
-            style={[styles.actionBtn, styles.actionBtnGreen]}
-            onPress={() => handleAction("start", v.id)}
-            disabled={starting}
-          >
-            <Text style={styles.actionBtnText}>▶ Démarrer</Text>
-          </Pressable>
-          <Pressable
-            style={[styles.actionBtn, styles.actionBtnRed]}
-            onPress={() => handleAction("cancel", v.id)}
-            disabled={cancelling}
-          >
-            <Text style={styles.actionBtnText}>✕ Annuler</Text>
-          </Pressable>
+        <View style={styles.actionsZone}>
+          <View style={styles.actionsRow}>
+            <Pressable
+              style={[styles.actionBtn, styles.actionBtnGreen]}
+              onPress={() => handleAction("start", v.id)}
+              disabled={starting}
+            >
+              <Text style={styles.actionBtnText}>▶ Démarrer</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.actionBtn, styles.actionBtnRed]}
+              onPress={() => handleAction("cancel", v.id)}
+              disabled={cancelling}
+            >
+              <Text style={styles.actionBtnText}>✕ Annuler</Text>
+            </Pressable>
+          </View>
         </View>
       )}
 
       {v.statut === "EN_COURS" && (
-        <Pressable
-          style={[styles.actionBtn, styles.actionBtnBlue, { flex: undefined, width: "100%" }]}
-          onPress={() => handleAction("end", v.id)}
-          disabled={ending}
-        >
-          <Text style={styles.actionBtnText}>■ Terminer le voyage</Text>
-        </Pressable>
+        <View style={styles.actionsZone}>
+          <Pressable
+            style={[styles.actionBtn, styles.actionBtnBlue, { flex: undefined, width: "100%" }]}
+            onPress={() => handleAction("end", v.id)}
+            disabled={ending}
+          >
+            <Text style={styles.actionBtnText}>■ Terminer le voyage</Text>
+          </Pressable>
+        </View>
       )}
-    </Pressable>
+    </View>
   );
 
   return (
@@ -177,9 +183,19 @@ const styles = StyleSheet.create({
   voyageCard: {
     backgroundColor: colors.white,
     borderRadius: radii.xl,
+    overflow: "hidden",
+    ...shadows.sm,
+  },
+  cardTapZone: {
     padding: spacing.xl,
     gap: spacing.md,
-    ...shadows.sm,
+  },
+  actionsZone: {
+    paddingHorizontal: spacing.xl,
+    paddingBottom: spacing.xl,
+    paddingTop: spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
   },
   cardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   routeRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
