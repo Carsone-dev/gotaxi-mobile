@@ -20,6 +20,7 @@ import type { Colis, ColisStatut } from "@/src/api/types";
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 const STATUT_CFG: Record<ColisStatut, { label: string; color: string; bg: string; icon: string }> = {
+  EN_ATTENTE_PAIEMENT: { label: "Paiement requis", color: colors.warningText, bg: colors.warningBg, icon: "💳" },
   EN_ATTENTE: { label: "En attente",  color: colors.warningText, bg: colors.warningBg, icon: "⏳" },
   CONFIRME:   { label: "Confirmé",    color: colors.info,        bg: colors.infoBg,    icon: "✅" },
   EN_TRANSIT: { label: "En transit",  color: colors.primary,     bg: colors.successBg, icon: "🚗" },
@@ -96,9 +97,12 @@ export default function ColisScreen() {
   const insets = useSafeAreaInsets();
   const { data: colis, isLoading, refetch, isRefetching } = useMesColis();
 
-  const actifs   = colis?.filter((c) => c.statut !== "LIVRE" && c.statut !== "ANNULE") ?? [];
-  const archives = colis?.filter((c) => c.statut === "LIVRE" || c.statut === "ANNULE") ?? [];
-  const total    = colis?.length ?? 0;
+  // Les colis EN_ATTENTE_PAIEMENT n'apparaissent pas : le paiement FedaPay
+  // n'est pas encore confirmé, ils sont annulés automatiquement si non payés.
+  const visibles = colis?.filter((c) => c.statut !== "EN_ATTENTE_PAIEMENT") ?? [];
+  const actifs   = visibles.filter((c) => c.statut !== "LIVRE" && c.statut !== "ANNULE");
+  const archives = visibles.filter((c) => c.statut === "LIVRE" || c.statut === "ANNULE");
+  const total    = visibles.length;
 
   // Construction du tableau plat pour FlatList
   const nodes: Node[] = [

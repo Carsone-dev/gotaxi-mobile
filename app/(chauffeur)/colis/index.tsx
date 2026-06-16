@@ -39,6 +39,7 @@ const TABS: { id: TabId; label: string; statuts: ColisStatut[] }[] = [
 ];
 
 const STATUT_CONFIG: Record<ColisStatut, { label: string; color: string; bg: string; icon: string }> = {
+  EN_ATTENTE_PAIEMENT: { label: "Paiement en attente", color: colors.warningText, bg: colors.warningBg, icon: "💳" },
   EN_ATTENTE: { label: "En attente", color: colors.warningText, bg: colors.warningBg, icon: "⏳" },
   CONFIRME:   { label: "Confirmé",   color: colors.info,        bg: colors.infoBg,    icon: "✅" },
   EN_TRANSIT: { label: "En transit", color: colors.primary,     bg: colors.successBg, icon: "🚗" },

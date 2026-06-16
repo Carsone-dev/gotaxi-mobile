@@ -40,6 +40,7 @@ import type { VoyageStatus, ReservationStatus, Reservation, Colis, ColisStatut, 
 // ── Colis ─────────────────────────────────────────────────────────────────────
 
 const COLIS_STATUT_CONFIG: Record<ColisStatut, { label: string; color: string; bg: string }> = {
+  EN_ATTENTE_PAIEMENT: { label: "Paiement en attente", color: colors.warningText, bg: colors.warningBg },
   EN_ATTENTE: { label: "En attente",  color: colors.warningText, bg: colors.warningBg },
   CONFIRME:   { label: "Confirmé",    color: colors.info,        bg: colors.infoBg    },
   EN_TRANSIT: { label: "En transit",  color: colors.primary,     bg: colors.successBg },

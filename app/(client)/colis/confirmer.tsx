@@ -10,6 +10,7 @@ import {
   Modal,
   TextInput,
   KeyboardAvoidingView,
+  Linking,
 } from "react-native";
 import Animated, { FadeIn } from "react-native-reanimated";
 import { router, useLocalSearchParams } from "expo-router";
@@ -83,6 +84,7 @@ export default function ConfirmerColisScreen() {
   const [payStep, setPayStep] = useState<PayStep>("phone");
   const [telephone, setTelephone] = useState(user?.telephone ?? "");
   const [payError, setPayError] = useState("");
+  const [paymentUrl, setPaymentUrl] = useState<string | null>(null);
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -151,7 +153,11 @@ export default function ConfirmerColisScreen() {
     if (!telephone.trim()) { setPayError("Entrez votre numéro Mobile Money."); return; }
     setPayError("");
     try {
-      await initierPaiement({ id: colisId, telephone: telephone.trim() });
+      const result = await initierPaiement({ id: colisId, telephone: telephone.trim() });
+      setPaymentUrl(result.payment_url ?? null);
+      if (result.payment_url) {
+        await Linking.openURL(result.payment_url);
+      }
       setPayStep("waiting");
       startPolling(colisId);
     } catch (e) {
@@ -343,15 +349,25 @@ export default function ConfirmerColisScreen() {
                   </View>
                   <Text style={ms.title}>En attente de paiement</Text>
                   <Text style={ms.body}>
-                    Confirmez la demande USSD sur votre téléphone{"\n"}
+                    Choisissez votre opérateur Mobile Money sur la page FedaPay puis confirmez la
+                    demande envoyée sur{" "}
                     <Text style={{ fontFamily: typography.fontFamily.bold }}>{telephone}</Text>
                   </Text>
-                  <View style={ms.waitingHint}>
-                    <Text style={ms.waitingHintIcon}>💡</Text>
-                    <Text style={ms.waitingHintText}>
-                      Composez *126*1# si vous ne recevez pas la notification USSD.
-                    </Text>
-                  </View>
+                  {paymentUrl ? (
+                    <Pressable
+                      style={ms.btnPrimary}
+                      onPress={() => Linking.openURL(paymentUrl)}
+                    >
+                      <Text style={ms.btnPrimaryTxt}>Rouvrir la page de paiement</Text>
+                    </Pressable>
+                  ) : (
+                    <View style={ms.waitingHint}>
+                      <Text style={ms.waitingHintIcon}>💡</Text>
+                      <Text style={ms.waitingHintText}>
+                        Composez *126*1# si vous ne recevez pas la demande de confirmation.
+                      </Text>
+                    </View>
+                  )}
                 </>
               )}
 

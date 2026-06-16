@@ -10,6 +10,7 @@ import {
   Modal,
   TextInput,
   KeyboardAvoidingView,
+  Linking,
 } from "react-native";
 import Animated, { FadeInDown, FadeIn } from "react-native-reanimated";
 import { router, useLocalSearchParams } from "expo-router";
@@ -37,6 +38,7 @@ export default function ConfirmScreen() {
   const [payStep, setPayStep] = useState<PayStep>("phone");
   const [telephone, setTelephone] = useState(user?.telephone ?? "");
   const [payError, setPayError] = useState("");
+  const [paymentUrl, setPaymentUrl] = useState<string | null>(null);
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -104,7 +106,11 @@ export default function ConfirmScreen() {
     }
     setPayError("");
     try {
-      await initierPaiement({ id: reservationId, telephone: telephone.trim() });
+      const result = await initierPaiement({ id: reservationId, telephone: telephone.trim() });
+      setPaymentUrl(result.payment_url ?? null);
+      if (result.payment_url) {
+        await Linking.openURL(result.payment_url);
+      }
       setPayStep("waiting");
       startPolling(reservationId);
     } catch (e) {
@@ -290,7 +296,7 @@ export default function ConfirmScreen() {
                 </>
               )}
 
-              {/* ─ Étape : en attente USSD ─ */}
+              {/* ─ Étape : en attente de paiement FedaPay ─ */}
               {payStep === "waiting" && (
                 <>
                   <View style={[ms.iconWrap, ms.iconWrapWaiting]}>
@@ -298,15 +304,25 @@ export default function ConfirmScreen() {
                   </View>
                   <Text style={ms.title}>En attente de paiement</Text>
                   <Text style={ms.body}>
-                    Confirmez la demande de paiement USSD sur votre téléphone{"\n"}
+                    Choisissez votre opérateur Mobile Money sur la page FedaPay puis confirmez la
+                    demande envoyée sur{" "}
                     <Text style={{ fontFamily: typography.fontFamily.bold }}>{telephone}</Text>
                   </Text>
-                  <View style={ms.waitingHint}>
-                    <Text style={ms.waitingHintIcon}>💡</Text>
-                    <Text style={ms.waitingHintText}>
-                      Une notification USSD est envoyée sur votre téléphone. Composez *126*1# si vous ne la recevez pas.
-                    </Text>
-                  </View>
+                  {paymentUrl ? (
+                    <Pressable
+                      style={ms.btnPrimary}
+                      onPress={() => Linking.openURL(paymentUrl)}
+                    >
+                      <Text style={ms.btnPrimaryTxt}>Rouvrir la page de paiement</Text>
+                    </Pressable>
+                  ) : (
+                    <View style={ms.waitingHint}>
+                      <Text style={ms.waitingHintIcon}>💡</Text>
+                      <Text style={ms.waitingHintText}>
+                        Composez *126*1# si vous ne recevez pas la demande de confirmation.
+                      </Text>
+                    </View>
+                  )}
                 </>
               )}
 

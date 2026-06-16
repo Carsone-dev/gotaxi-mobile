@@ -412,33 +412,9 @@ export interface TransactionListResult {
   pages: number;
 }
 
-export interface RechargeInitiatePayload {
-  montant: number;
-  operateur: OperateurMM;
-  telephone: string;
-}
-
-export interface RechargeInitiateResult {
-  message: string;
-  payment_url?: string;
-}
-
 export interface WithdrawPayload {
   montant: number;
   telephone: string;
   operateur: OperateurMM;
-}
-
-export interface TransferPayload {
-  destinataire_telephone: string;
-  montant: number;
-}
-
-export interface WalletPublic {
-  user_id: string;
-  nom: string;
-  prenom: string;
-  telephone: string;
-  actif: boolean;
 }
 

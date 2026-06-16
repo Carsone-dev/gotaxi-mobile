@@ -7,7 +7,7 @@ export const reservationsApi = {
     return data;
   },
 
-  initierPaiement: async (id: string, telephone: string): Promise<{ fedapay_tx_id: number; montant: number }> => {
+  initierPaiement: async (id: string, telephone: string): Promise<{ fedapay_tx_id: number; montant: number; payment_url?: string }> => {
     const { data } = await apiClient.post(`/reservations/${id}/initier-paiement`, { telephone });
     return data;
   },
