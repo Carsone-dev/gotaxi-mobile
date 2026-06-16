@@ -138,13 +138,6 @@ export interface ChauffeurStats {
   en_ligne: boolean;
 }
 
-export interface ChauffeurRevenus {
-  aujourd_hui: number;
-  semaine: number;
-  mois: number;
-  total: number;
-}
-
 export interface ChauffeurUpdatePayload {
   cin_numero?: string;
   permis_numero?: string;
@@ -449,19 +442,3 @@ export interface WalletPublic {
   actif: boolean;
 }
 
-// ─── Payout Account (chauffeur) ───────────────────────────────────────────────
-
-export type PayoutOperateur = "MTN_MOMO" | "ORANGE_MONEY" | "MOOV_MONEY" | "CELTIS" | "FEDAPAY";
-
-export interface ComptePayoutChauffeur {
-  id: string;
-  chauffeur_id: string;
-  operateur: PayoutOperateur;
-  telephone: string;
-  actif: boolean;
-}
-
-export interface ComptePayoutCreatePayload {
-  operateur: PayoutOperateur;
-  telephone: string;
-}

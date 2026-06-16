@@ -15,7 +15,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuthStore } from "@/src/stores/authStore";
 import {
   useChauffeurStats,
-  useChauffeurRevenus,
   useMyChauffeurProfile,
   useGoOnline,
   useGoOffline,
@@ -232,9 +231,8 @@ export default function DashboardScreen() {
   const { showToast } = useToast();
 
   const { data: chauffeur } = useMyChauffeurProfile();
-  const { data: stats, isLoading: statsLoading } = useChauffeurStats();
+  const { data: stats } = useChauffeurStats();
   const kycValide = chauffeur?.kyc_valide ?? false;
-  const { data: revenus } = useChauffeurRevenus();
   const { data: incoming } = useIncomingReservations();
   const { data: mesVoyages } = useMyVoyages();
   const { mutateAsync: goOnline, isPending: goingOnline } = useGoOnline();
@@ -362,24 +360,10 @@ export default function DashboardScreen() {
           </Pressable>
         </View>
 
-        <View style={styles.revenueBlock}>
-          <Text style={styles.revenueEyebrow}>REVENUS AUJOURD'HUI</Text>
-          {statsLoading ? (
-            <ActivityIndicator color={colors.white} size="large" style={{ marginVertical: 6 }} />
-          ) : (
-            <Text style={styles.revenueAmount}>{formatFCFA(revenus?.aujourd_hui ?? 0)}</Text>
-          )}
-        </View>
-
         <View style={styles.statsStrip}>
           <View style={styles.statCell}>
             <Text style={styles.statVal}>{stats?.nombre_trajets ?? 0}</Text>
             <Text style={styles.statLbl}>Courses</Text>
-          </View>
-          <View style={styles.statSep} />
-          <View style={styles.statCell}>
-            <Text style={styles.statVal}>{formatFCFA(revenus?.mois ?? 0)}</Text>
-            <Text style={styles.statLbl}>Ce mois</Text>
           </View>
           <View style={styles.statSep} />
           <View style={styles.statCell}>
@@ -444,13 +428,6 @@ export default function DashboardScreen() {
             iconColor={voyagesColisActifs > 0 ? colors.primary : colors.textSecondary}
             badge={voyagesColisActifs > 0 ? voyagesColisActifs : undefined}
             onPress={() => router.push("/(chauffeur)/colis" as any)}
-          />
-          <QuickBtn
-            icon="wallet"
-            label="Revenus"
-            iconBg="#e8f5e9"
-            iconColor="#2e7d32"
-            onPress={() => router.push("/(chauffeur)/revenus" as any)}
           />
         </View>
       </View>
@@ -624,24 +601,6 @@ const styles = StyleSheet.create({
   },
   toggleTextOn: { color: colors.white },
   toggleTextKyc: { color: colors.warningText },
-  revenueBlock: {
-    alignItems: "center",
-    paddingVertical: spacing.lg,
-  },
-  revenueEyebrow: {
-    fontSize: typography.fontSize.xs,
-    fontFamily: typography.fontFamily.medium,
-    color: "rgba(255,255,255,0.65)",
-    letterSpacing: 1.5,
-    textTransform: "uppercase",
-    marginBottom: 4,
-  },
-  revenueAmount: {
-    fontSize: 42,
-    fontFamily: typography.fontFamily.extraBold,
-    color: colors.white,
-    letterSpacing: -1,
-  },
   statsStrip: {
     flexDirection: "row",
     backgroundColor: "rgba(0,0,0,0.22)",

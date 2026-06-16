@@ -14,11 +14,21 @@ import * as ImagePicker from "expo-image-picker";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { router } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import { format } from "date-fns";
 import { fr } from "date-fns/locale";
 import { useAuthStore } from "@/src/stores/authStore";
 import { usersApi } from "@/src/api/endpoints/users";
 import { colors, typography, spacing, radii, shadows } from "@/src/theme";
+
+type Tint = "primary" | "info" | "warning" | "danger";
+
+const TINTS: Record<Tint, { bg: string; color: string }> = {
+  primary: { bg: `${colors.primary}15`, color: colors.primary },
+  info: { bg: colors.infoBg, color: colors.info },
+  warning: { bg: colors.warningBg, color: colors.warningText },
+  danger: { bg: colors.errorBg, color: colors.error },
+};
 
 // ── Composants utilitaires ────────────────────────────────────────────────────
 function SectionLabel({ label }: { label: string }) {
@@ -30,16 +40,17 @@ function MenuRow({
   label,
   right,
   onPress,
-  danger,
+  tint = "primary",
   separator,
 }: {
-  icon: string;
+  icon: React.ComponentProps<typeof Ionicons>["name"];
   label: string;
   right?: React.ReactNode;
   onPress?: () => void;
-  danger?: boolean;
+  tint?: Tint;
   separator?: boolean;
 }) {
+  const t = TINTS[tint];
   return (
     <>
       <Pressable
@@ -47,22 +58,35 @@ function MenuRow({
         onPress={onPress}
         disabled={!onPress}
       >
-        <View style={[styles.rowIcon, danger && styles.rowIconDanger]}>
-          <Text style={styles.rowIconText}>{icon}</Text>
+        <View style={[styles.rowIcon, { backgroundColor: t.bg, borderColor: t.bg }]}>
+          <Ionicons name={icon} size={17} color={t.color} />
         </View>
-        <Text style={[styles.rowLabel, danger && styles.rowLabelDanger]}>{label}</Text>
-        <View style={styles.rowRight}>{right ?? <Text style={styles.rowChevron}>›</Text>}</View>
+        <Text style={[styles.rowLabel, tint === "danger" && styles.rowLabelDanger]}>{label}</Text>
+        <View style={styles.rowRight}>
+          {right ?? <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />}
+        </View>
       </Pressable>
       {separator && <View style={styles.rowDivider} />}
     </>
   );
 }
 
-function InfoRow({ icon, label, value }: { icon: string; label: string; value: string }) {
+function InfoRow({
+  icon,
+  label,
+  value,
+  tint = "primary",
+}: {
+  icon: React.ComponentProps<typeof Ionicons>["name"];
+  label: string;
+  value: string;
+  tint?: Tint;
+}) {
+  const t = TINTS[tint];
   return (
     <View style={styles.infoRow}>
-      <View style={styles.rowIcon}>
-        <Text style={styles.rowIconText}>{icon}</Text>
+      <View style={[styles.rowIcon, { backgroundColor: t.bg, borderColor: t.bg }]}>
+        <Ionicons name={icon} size={17} color={t.color} />
       </View>
       <View style={styles.infoBody}>
         <Text style={styles.infoLabel}>{label}</Text>
@@ -167,7 +191,7 @@ export default function ProfileScreen() {
           onPress={() => router.back()}
           style={({ pressed }) => [styles.backBtn, pressed && { opacity: 0.7 }]}
         >
-          <Text style={styles.backIcon}>‹</Text>
+          <Ionicons name="chevron-back" size={20} color={colors.textPrimary} />
         </Pressable>
         <Text style={styles.headerTitle}>Mon Profil</Text>
         <View style={styles.headerSpacer} />
@@ -200,7 +224,7 @@ export default function ProfileScreen() {
               </View>
             )}
             <View style={styles.cameraBtn}>
-              <Text style={styles.cameraIcon}>📷</Text>
+              <Ionicons name="camera" size={13} color={colors.primary} />
             </View>
           </Pressable>
 
@@ -219,17 +243,22 @@ export default function ProfileScreen() {
               styles.verifiedBadge,
               user?.telephone_verifie ? styles.verifiedBadgeOk : styles.verifiedBadgePending,
             ]}>
+              <Ionicons
+                name={user?.telephone_verifie ? "checkmark-circle" : "alert-circle"}
+                size={13}
+                color={user?.telephone_verifie ? colors.success : colors.warningText}
+              />
               <Text style={[
                 styles.verifiedText,
                 user?.telephone_verifie ? styles.verifiedTextOk : styles.verifiedTextPending,
               ]}>
-                {user?.telephone_verifie ? "✓ Vérifié" : "⚠ Non vérifié"}
+                {user?.telephone_verifie ? "Vérifié" : "Non vérifié"}
               </Text>
             </View>
 
             {(user?.note_moyenne ?? 0) > 0 && (
               <View style={styles.ratingBadge}>
-                <Text style={styles.ratingStar}>⭐</Text>
+                <Ionicons name="star" size={12} color={colors.yellow} />
                 <Text style={styles.ratingText}>
                   {user!.note_moyenne.toFixed(1)}
                 </Text>
@@ -243,19 +272,22 @@ export default function ProfileScreen() {
         <Animated.View entering={FadeInDown.duration(300).delay(80)} style={styles.card}>
           <SectionLabel label="Informations" />
           <InfoRow
-            icon="📧"
+            icon="mail"
+            tint="info"
             label="Email"
             value={user?.email ?? "Non renseigné"}
           />
           <View style={styles.rowDivider} />
           <InfoRow
-            icon="📅"
+            icon="calendar"
+            tint="primary"
             label="Membre depuis"
             value={memberSince}
           />
           <View style={styles.rowDivider} />
           <InfoRow
-            icon="🌍"
+            icon="globe"
+            tint="warning"
             label="Langue"
             value={user?.langue === "fr" ? "Français" : user?.langue ?? "Français"}
           />
@@ -267,7 +299,8 @@ export default function ProfileScreen() {
           {isChauffeur && (
             <>
               <MenuRow
-                icon="🚗"
+                icon="car-sport"
+                tint="primary"
                 label="Mode chauffeur"
                 right={<ModeToggle active={isChauffeurMode} onPress={toggleChauffeur} />}
                 separator
@@ -275,13 +308,15 @@ export default function ProfileScreen() {
             </>
           )}
           <MenuRow
-            icon="📱"
+            icon="phone-portrait"
+            tint="info"
             label="Vérifier mon numéro"
             onPress={() => router.push("/(auth)/otp" as any)}
             separator
           />
           <MenuRow
-            icon="✏️"
+            icon="create"
+            tint="warning"
             label="Modifier le profil"
             onPress={() => router.push("/(client)/edit-profile" as any)}
           />
@@ -291,13 +326,15 @@ export default function ProfileScreen() {
         <Animated.View entering={FadeInDown.duration(300).delay(240)} style={styles.card}>
           <SectionLabel label="Support" />
           <MenuRow
-            icon="❓"
+            icon="help-circle"
+            tint="warning"
             label="Aide et FAQ"
             onPress={() => router.push("/(client)/support" as any)}
             separator
           />
           <MenuRow
-            icon="ℹ️"
+            icon="information-circle"
+            tint="primary"
             label="À propos de GoTaxi"
             onPress={() => router.push("/(client)/about" as any)}
           />
@@ -309,7 +346,7 @@ export default function ProfileScreen() {
             onPress={handleLogout}
             style={({ pressed }) => [styles.logoutBtn, pressed && { opacity: 0.8 }]}
           >
-            <Text style={styles.logoutIcon}>🚪</Text>
+            <Ionicons name="log-out-outline" size={18} color={colors.error} />
             <Text style={styles.logoutText}>Se déconnecter</Text>
           </Pressable>
           <Text style={styles.versionText}>GoTaxi · v1.0.0</Text>
@@ -344,13 +381,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderWidth: 1,
     borderColor: colors.border,
-  },
-  backIcon: {
-    fontSize: 22,
-    color: colors.textPrimary,
-    fontFamily: typography.fontFamily.bold,
-    lineHeight: 26,
-    marginTop: -1,
   },
   headerTitle: {
     flex: 1,
@@ -426,7 +456,6 @@ const styles = StyleSheet.create({
     borderColor: colors.surface,
     ...shadows.sm,
   },
-  cameraIcon: { fontSize: 13 },
   photoHint: {
     fontSize: typography.fontSize.xs,
     fontFamily: typography.fontFamily.regular,
@@ -452,6 +481,9 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
   },
   verifiedBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
     borderRadius: radii.full,
@@ -475,7 +507,6 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs,
     borderRadius: radii.full,
   },
-  ratingStar: { fontSize: 12 },
   ratingText: {
     fontSize: typography.fontSize.sm,
     fontFamily: typography.fontFamily.bold,
@@ -517,17 +548,12 @@ const styles = StyleSheet.create({
   },
   rowPressed: { backgroundColor: colors.surface },
   rowIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
+    width: 38,
+    height: 38,
+    borderRadius: radii.lg,
     alignItems: "center",
     justifyContent: "center",
   },
-  rowIconDanger: { backgroundColor: colors.errorBg, borderColor: colors.errorBg },
-  rowIconText: { fontSize: 16 },
   rowLabel: {
     flex: 1,
     fontSize: typography.fontSize.base,
@@ -536,12 +562,6 @@ const styles = StyleSheet.create({
   },
   rowLabelDanger: { color: colors.error },
   rowRight: { alignItems: "flex-end" },
-  rowChevron: {
-    fontSize: typography.fontSize.xl,
-    color: colors.textMuted,
-    fontFamily: typography.fontFamily.regular,
-    lineHeight: 24,
-  },
   rowDivider: {
     height: 1,
     backgroundColor: colors.border,
@@ -611,7 +631,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: `${colors.error}30`,
   },
-  logoutIcon: { fontSize: 18 },
   logoutText: {
     fontSize: typography.fontSize.base,
     fontFamily: typography.fontFamily.bold,

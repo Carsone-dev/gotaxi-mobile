@@ -3,7 +3,6 @@ import type {
   Chauffeur,
   ChauffeurPublic,
   ChauffeurStats,
-  ChauffeurRevenus,
   ChauffeurUpdatePayload,
   Vehicule,
   VehiculeCreatePayload,
@@ -54,11 +53,6 @@ export const chauffeursApi = {
 
   stats: async (): Promise<ChauffeurStats> => {
     const { data } = await apiClient.get<ChauffeurStats>("/chauffeurs/me/stats");
-    return data;
-  },
-
-  revenus: async (): Promise<ChauffeurRevenus> => {
-    const { data } = await apiClient.get<ChauffeurRevenus>("/chauffeurs/me/revenus");
     return data;
   },
 

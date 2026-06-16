@@ -17,13 +17,6 @@ export const useChauffeurStats = () =>
     refetchInterval: 60_000,
   });
 
-export const useChauffeurRevenus = () =>
-  useQuery({
-    queryKey: ["chauffeur", "revenus"],
-    queryFn: chauffeursApi.revenus,
-    staleTime: 60_000,
-  });
-
 export const useMyVehicules = () =>
   useQuery({
     queryKey: ["chauffeur", "vehicules"],

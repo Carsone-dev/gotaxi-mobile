@@ -562,23 +562,6 @@ export default function ChauffeurSettingsScreen() {
         )}
       </View>
 
-      {/* ── Section 4 : Compte de paiement ──────────────────────────────── */}
-      <Pressable
-        style={styles.payoutSection}
-        onPress={() => router.push("/(chauffeur)/payout-account")}
-      >
-        <View style={styles.payoutIconBox}>
-          <Text style={styles.payoutIcon}>💳</Text>
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.payoutTitle}>Compte de paiement</Text>
-          <Text style={styles.payoutSub}>
-            Configurez où recevoir vos revenus (MoMo, FedaPay…)
-          </Text>
-        </View>
-        <Text style={styles.payoutArrow}>›</Text>
-      </Pressable>
-
       {/* ── Modal : modifier profil ──────────────────────────────────────── */}
       <Modal visible={showProfileModal} animationType="slide" presentationStyle="pageSheet">
         <ScrollView style={styles.modal} contentContainerStyle={styles.modalContent}>
@@ -1509,42 +1492,6 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   // Payout section
-  payoutSection: {
-    backgroundColor: colors.white,
-    margin: spacing["2xl"],
-    marginBottom: 0,
-    borderRadius: radii.xl,
-    padding: spacing.xl,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.md,
-    ...shadows.sm,
-  },
-  payoutIconBox: {
-    width: 48,
-    height: 48,
-    borderRadius: radii.lg,
-    backgroundColor: colors.successBg,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  payoutIcon: { fontSize: 24 },
-  payoutTitle: {
-    fontSize: typography.fontSize.base,
-    fontFamily: typography.fontFamily.bold,
-    color: colors.textPrimary,
-  },
-  payoutSub: {
-    fontSize: typography.fontSize.sm,
-    fontFamily: typography.fontFamily.regular,
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
-  payoutArrow: {
-    fontSize: 24,
-    color: colors.textMuted,
-    fontFamily: typography.fontFamily.regular,
-  },
   // Interior photos
   interiorRow: {
     flexDirection: "row",

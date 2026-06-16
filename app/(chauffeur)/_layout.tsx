@@ -74,10 +74,6 @@ export default function ChauffeurLayout() {
         options={{ href: null, tabBarStyle: { display: "none" } }}
       />
       <Tabs.Screen
-        name="revenus"
-        options={{ href: null, tabBarStyle: { display: "none" } }}
-      />
-      <Tabs.Screen
         name="settings"
         options={{ href: null, tabBarStyle: { display: "none" } }}
       />
@@ -87,10 +83,6 @@ export default function ChauffeurLayout() {
       />
       <Tabs.Screen
         name="retrait"
-        options={{ href: null, tabBarStyle: { display: "none" } }}
-      />
-      <Tabs.Screen
-        name="payout-account"
         options={{ href: null, tabBarStyle: { display: "none" } }}
       />
       <Tabs.Screen

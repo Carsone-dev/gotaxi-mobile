@@ -12,11 +12,22 @@ import {
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { router } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Animated, { FadeInDown } from "react-native-reanimated";
 import { useAuthStore } from "@/src/stores/authStore";
 import { useMyChauffeurProfile } from "@/src/hooks/useChauffeur";
 import { usersApi } from "@/src/api/endpoints/users";
 import { colors, typography, spacing, radii, shadows } from "@/src/theme";
+
+type Tint = "primary" | "info" | "warning" | "danger";
+
+const TINTS: Record<Tint, { bg: string; color: string }> = {
+  primary: { bg: `${colors.primary}15`, color: colors.primary },
+  info: { bg: colors.infoBg, color: colors.info },
+  warning: { bg: colors.warningBg, color: colors.warningText },
+  danger: { bg: colors.errorBg, color: colors.error },
+};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -98,7 +109,7 @@ function AvatarPicker({
 
       {/* Bouton caméra */}
       <View style={av.cameraBtn}>
-        <Text style={av.cameraIcon}>📷</Text>
+        <Ionicons name="camera" size={14} color={colors.primary} />
       </View>
     </Pressable>
   );
@@ -153,10 +164,20 @@ const av = StyleSheet.create({
 
 // ── Stat pill ─────────────────────────────────────────────────────────────────
 
-function StatPill({ icon, value, label }: { icon: string; value: string; label: string }) {
+function StatPill({
+  icon,
+  value,
+  label,
+}: {
+  icon: React.ComponentProps<typeof Ionicons>["name"];
+  value: string;
+  label: string;
+}) {
   return (
     <View style={sp.pill}>
-      <Text style={sp.icon}>{icon}</Text>
+      <View style={sp.iconBox}>
+        <Ionicons name={icon} size={15} color={colors.white} />
+      </View>
       <Text style={sp.value}>{value}</Text>
       <Text style={sp.label}>{label}</Text>
     </View>
@@ -170,7 +191,15 @@ const sp = StyleSheet.create({
     gap: 3,
     paddingVertical: spacing.md,
   },
-  icon: { fontSize: 18 },
+  iconBox: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: "rgba(255,255,255,0.18)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 2,
+  },
   value: {
     fontSize: typography.fontSize.xl,
     fontFamily: typography.fontFamily.extraBold,
@@ -193,16 +222,17 @@ function MenuItem({
   label,
   sub,
   onPress,
-  danger,
+  tint = "primary",
   last,
 }: {
-  icon: string;
+  icon: React.ComponentProps<typeof Ionicons>["name"];
   label: string;
   sub?: string;
   onPress?: () => void;
-  danger?: boolean;
+  tint?: Tint;
   last?: boolean;
 }) {
+  const t = TINTS[tint];
   return (
     <>
       <Pressable
@@ -210,14 +240,14 @@ function MenuItem({
         onPress={onPress}
         disabled={!onPress}
       >
-        <View style={[mi.iconBox, danger && mi.iconBoxDanger]}>
-          <Text style={mi.iconText}>{icon}</Text>
+        <View style={[mi.iconBox, { backgroundColor: t.bg }]}>
+          <Ionicons name={icon} size={19} color={t.color} />
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={[mi.label, danger && mi.labelDanger]}>{label}</Text>
+          <Text style={[mi.label, tint === "danger" && mi.labelDanger]}>{label}</Text>
           {sub ? <Text style={mi.sub}>{sub}</Text> : null}
         </View>
-        <Text style={mi.chevron}>›</Text>
+        <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
       </Pressable>
       {!last && <View style={mi.sep} />}
     </>
@@ -234,15 +264,12 @@ const mi = StyleSheet.create({
   },
   rowPressed: { backgroundColor: colors.surface },
   iconBox: {
-    width: 38,
-    height: 38,
+    width: 40,
+    height: 40,
     borderRadius: radii.lg,
-    backgroundColor: `${colors.primary}15`,
     alignItems: "center",
     justifyContent: "center",
   },
-  iconBoxDanger: { backgroundColor: `${colors.error}12` },
-  iconText: { fontSize: 18 },
   label: {
     fontSize: typography.fontSize.base,
     fontFamily: typography.fontFamily.semiBold,
@@ -255,7 +282,6 @@ const mi = StyleSheet.create({
     color: colors.textMuted,
     marginTop: 1,
   },
-  chevron: { fontSize: 22, color: colors.textMuted, lineHeight: 26 },
   sep: { height: 1, backgroundColor: colors.border, marginHorizontal: spacing.xl },
 });
 
@@ -310,6 +336,8 @@ export default function ChauffeurProfileScreen() {
     >
       {/* ── Hero ── */}
       <View style={[styles.hero, { paddingTop: PT }]}>
+        <View style={styles.deco1} />
+        <View style={styles.deco2} />
 
         <AvatarPicker
           photoUrl={photoUrl}
@@ -322,7 +350,7 @@ export default function ChauffeurProfileScreen() {
         <Text style={styles.heroPhone}>{user?.telephone}</Text>
 
         <View style={styles.verifiedBadge}>
-          <Text style={styles.verifiedDot}>✦</Text>
+          <Ionicons name="sparkles" size={11} color={colors.white} />
           <Text style={styles.verifiedText}>Chauffeur GoTaxi</Text>
         </View>
 
@@ -332,19 +360,19 @@ export default function ChauffeurProfileScreen() {
         {/* Stats */}
         <View style={styles.statsRow}>
           <StatPill
-            icon="🚗"
+            icon="car-sport"
             value={chauffeur?.nombre_trajets != null ? String(chauffeur.nombre_trajets) : "0"}
             label="Voyages"
           />
           <View style={styles.statsDivider} />
           <StatPill
-            icon="⭐"
+            icon="star"
             value={formatNote(chauffeur?.note_moyenne)}
             label="Note"
           />
           <View style={styles.statsDivider} />
           <StatPill
-            icon="📦"
+            icon="cube"
             value={chauffeur?.accepte_colis ? "Oui" : "Non"}
             label="Colis"
           />
@@ -353,56 +381,62 @@ export default function ChauffeurProfileScreen() {
 
       {/* ── Hint photo si pas de photo ── */}
       {!user?.photo_url && (
-        <View style={styles.photoHint}>
-          <Text style={styles.photoHintIcon}>💡</Text>
+        <Animated.View entering={FadeInDown.duration(300)} style={styles.photoHint}>
+          <Ionicons name="bulb" size={16} color={colors.primary} />
           <Text style={styles.photoHintText}>
             Ajoutez une photo professionnelle — les clients font plus confiance aux chauffeurs avec photo.
           </Text>
-        </View>
+        </Animated.View>
       )}
 
       {/* ── Compte ── */}
-      <Text style={styles.sectionLabel}>Mon compte</Text>
-      <View style={styles.card}>
-        <MenuItem
-          icon="💰"
-          label="Mes revenus"
-          sub="Historique et statistiques"
-          onPress={() => router.push("/(chauffeur)/revenus" as any)}
-        />
-        <MenuItem
-          icon="🚗"
-          label="Paramètres & véhicule"
-          sub="Profil, documents, véhicule"
-          onPress={() => router.push("/(chauffeur)/settings" as any)}
-          last
-        />
-      </View>
+      <Animated.View entering={FadeInDown.duration(300).delay(60)}>
+        <Text style={styles.sectionLabel}>Mon compte</Text>
+        <View style={styles.card}>
+          <MenuItem
+            icon="construct"
+            tint="info"
+            label="Paramètres & véhicule"
+            sub="Profil, documents, véhicule"
+            onPress={() => router.push("/(chauffeur)/settings" as any)}
+            last
+          />
+        </View>
+      </Animated.View>
 
       {/* ── Support ── */}
-      <Text style={styles.sectionLabel}>Assistance</Text>
-      <View style={styles.card}>
-        <MenuItem
-          icon="❓"
-          label="Aide & support"
-          sub="FAQ, nous contacter"
-          onPress={() => router.push("/(chauffeur)/support" as any)}
-        />
-        <MenuItem
-          icon="ℹ️"
-          label="À propos de GoTaxi"
-          sub="Mission, fonctionnalités, légal"
-          onPress={() => router.push("/(chauffeur)/about" as any)}
-          last
-        />
-      </View>
+      <Animated.View entering={FadeInDown.duration(300).delay(120)}>
+        <Text style={styles.sectionLabel}>Assistance</Text>
+        <View style={styles.card}>
+          <MenuItem
+            icon="help-circle"
+            tint="warning"
+            label="Aide & support"
+            sub="FAQ, nous contacter"
+            onPress={() => router.push("/(chauffeur)/support" as any)}
+          />
+          <MenuItem
+            icon="information-circle"
+            tint="primary"
+            label="À propos de GoTaxi"
+            sub="Mission, fonctionnalités, légal"
+            onPress={() => router.push("/(chauffeur)/about" as any)}
+            last
+          />
+        </View>
+      </Animated.View>
 
       {/* ── Déconnexion ── */}
-      <View style={styles.card}>
-        <MenuItem icon="🚪" label="Se déconnecter" danger onPress={handleLogout} last />
-      </View>
-
-      <Text style={styles.version}>GoTaxi · Chauffeur</Text>
+      <Animated.View entering={FadeInDown.duration(300).delay(180)}>
+        <Pressable
+          onPress={handleLogout}
+          style={({ pressed }) => [styles.logoutBtn, pressed && { opacity: 0.8 }]}
+        >
+          <Ionicons name="log-out-outline" size={18} color={colors.error} />
+          <Text style={styles.logoutText}>Se déconnecter</Text>
+        </Pressable>
+        <Text style={styles.version}>GoTaxi · Chauffeur</Text>
+      </Animated.View>
     </ScrollView>
   );
 }
@@ -417,6 +451,25 @@ const styles = StyleSheet.create({
     paddingBottom: spacing["2xl"],
     alignItems: "center",
     gap: spacing.xs,
+    overflow: "hidden",
+  },
+  deco1: {
+    position: "absolute",
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    top: -70,
+    right: -50,
+  },
+  deco2: {
+    position: "absolute",
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: "rgba(255,255,255,0.05)",
+    bottom: 20,
+    left: -40,
   },
   heroName: {
     fontSize: typography.fontSize["2xl"],
@@ -439,7 +492,6 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     marginTop: spacing.xs,
   },
-  verifiedDot: { fontSize: 10, color: colors.white },
   verifiedText: {
     fontSize: typography.fontSize.xs,
     fontFamily: typography.fontFamily.bold,
@@ -475,7 +527,6 @@ const styles = StyleSheet.create({
     marginHorizontal: spacing["2xl"],
     marginTop: spacing.xl,
   },
-  photoHintIcon: { fontSize: 16 },
   photoHintText: {
     flex: 1,
     fontSize: typography.fontSize.sm,
@@ -504,11 +555,29 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
 
+  logoutBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.sm,
+    backgroundColor: colors.errorBg,
+    borderRadius: radii.xl,
+    paddingVertical: spacing.lg,
+    marginHorizontal: spacing["2xl"],
+    marginTop: spacing["2xl"],
+    borderWidth: 1,
+    borderColor: `${colors.error}30`,
+  },
+  logoutText: {
+    fontSize: typography.fontSize.base,
+    fontFamily: typography.fontFamily.bold,
+    color: colors.error,
+  },
   version: {
     textAlign: "center",
     fontSize: typography.fontSize.xs,
     fontFamily: typography.fontFamily.regular,
     color: colors.textMuted,
-    marginTop: spacing["2xl"],
+    marginTop: spacing.lg,
   },
 });
