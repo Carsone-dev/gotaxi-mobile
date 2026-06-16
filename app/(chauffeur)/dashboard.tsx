@@ -243,7 +243,7 @@ export default function DashboardScreen() {
   const [filterRoute, setFilterRoute] = useState("");
 
   const isOnline = stats?.en_ligne ?? false;
-  const pendingCount = incoming?.length ?? 0;
+  const pendingCount = incoming?.filter((r) => r.statut === "EN_ATTENTE").length ?? 0;
   const voyagesAvecColisActifIds = useMemo(
     () =>
       (mesVoyages ?? [])
