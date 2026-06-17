@@ -22,92 +22,8 @@ import { Button } from "@/src/components/ui/Button";
 import { Input } from "@/src/components/ui/Input";
 import { PhoneInput } from "@/src/components/ui/PhoneInput";
 import { useToast } from "@/src/components/common/Toast";
+import { GoTaxiLogo } from "@/src/components/common/GoTaxiLogo";
 import { colors, typography, spacing, radii, shadows } from "@/src/theme";
-
-// ── Logo GoTaxi ───────────────────────────────────────────────────────────────
-function GoTaxiLogo() {
-  return (
-    <View style={logo.wrap}>
-      {/* Icône */}
-      <View style={logo.iconRing}>
-        <View style={logo.iconInner}>
-          <Ionicons name="car-sport" size={32} color={colors.primary} />
-        </View>
-        {/* Petit badge jaune */}
-        <View style={logo.badge}>
-          <Ionicons name="location-sharp" size={9} color={colors.primary} />
-        </View>
-      </View>
-
-      {/* Texte */}
-      <View style={logo.textRow}>
-        <Text style={logo.go}>Go</Text>
-        <Text style={logo.taxi}>Taxi</Text>
-      </View>
-
-      {/* Tagline */}
-      <Text style={logo.tagline}>Votre taxi interurbain au Bénin</Text>
-    </View>
-  );
-}
-
-const logo = StyleSheet.create({
-  wrap: { alignItems: "center", gap: 10 },
-  iconRing: {
-    width: 86,
-    height: 86,
-    borderRadius: 43,
-    backgroundColor: "rgba(255,255,255,0.15)",
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1.5,
-    borderColor: "rgba(255,255,255,0.25)",
-  },
-  iconInner: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: colors.white,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  badge: {
-    position: "absolute",
-    bottom: 4,
-    right: 4,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: colors.yellow,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 2,
-    borderColor: colors.primary,
-  },
-  textRow: {
-    flexDirection: "row",
-    alignItems: "baseline",
-    gap: 1,
-  },
-  go: {
-    fontSize: 38,
-    fontFamily: typography.fontFamily.extraBold,
-    color: colors.white,
-    letterSpacing: -0.5,
-  },
-  taxi: {
-    fontSize: 38,
-    fontFamily: typography.fontFamily.extraBold,
-    color: colors.yellow,
-    letterSpacing: -0.5,
-  },
-  tagline: {
-    fontSize: typography.fontSize.sm,
-    fontFamily: typography.fontFamily.medium,
-    color: "rgba(255,255,255,0.75)",
-    letterSpacing: 0.3,
-  },
-});
 
 // ── Écran connexion ───────────────────────────────────────────────────────────
 export default function LoginScreen() {
@@ -182,7 +98,7 @@ export default function LoginScreen() {
         <View style={styles.deco1} />
         <View style={styles.deco2} />
         <View style={styles.deco3} />
-        <GoTaxiLogo />
+        <GoTaxiLogo size="md" showTagline />
       </View>
 
       {/* ── Card blanche ── */}

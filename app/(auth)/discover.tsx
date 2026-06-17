@@ -20,6 +20,7 @@ import { usePublicVoyages, usePublicSearchVoyages, usePublicVilles } from "@/src
 import type { Voyage } from "@/src/api/types";
 import { colors, typography, spacing } from "@/src/theme";
 import { resolveMediaUrl } from "@/src/constants/app";
+import { GoTaxiLogo } from "@/src/components/common/GoTaxiLogo";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -674,12 +675,7 @@ export default function DiscoverScreen() {
       {/* ── SECTION VERTE ── */}
       <View style={s.hero}>
         {/* Logo */}
-        <View style={s.logoRow}>
-          <View style={s.logoCircle}>
-            <Text style={s.logoLetter}>G</Text>
-          </View>
-          <Text style={s.appName}>GoTaxi</Text>
-        </View>
+        <GoTaxiLogo size="sm" showTagline={false} />
         <Text style={s.heroSub}>Trouvez votre prochain voyage</Text>
 
         {/* Carte de recherche blanche */}
@@ -829,19 +825,6 @@ const s = StyleSheet.create({
     paddingHorizontal: spacing.xl,
     paddingTop: spacing.lg,
     paddingBottom: spacing.xl,
-  },
-  logoRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 6 },
-  logoCircle: {
-    width: 38, height: 38, borderRadius: 19,
-    backgroundColor: colors.white, alignItems: "center", justifyContent: "center",
-  },
-  logoLetter: {
-    fontSize: 22, fontFamily: typography.fontFamily.extraBold,
-    color: colors.primary, lineHeight: 26,
-  },
-  appName: {
-    fontSize: typography.fontSize["2xl"], fontFamily: typography.fontFamily.extraBold,
-    color: colors.white,
   },
   heroSub: {
     fontSize: typography.fontSize.base, fontFamily: typography.fontFamily.regular,
