@@ -218,6 +218,23 @@ function StepDot({ index, activeStep }: { index: number; activeStep: number }) {
 
 // ─── Écran principal ──────────────────────────────────────────────────────────
 
+type VoyageActifData = {
+  message: string;
+  detail: string;
+  voyage: {
+    id: string;
+    statut: string;
+    statut_label: string;
+    ville_depart: string;
+    ville_arrivee: string;
+    point_depart: string;
+    date_depart: string;
+    nombre_places_restantes: number;
+    nombre_places_total: number;
+    prix_par_place: number;
+  };
+};
+
 export default function PublishVoyageScreen() {
   const { showToast } = useToast();
   const { bottom: safeBottom } = useSafeAreaInsets();
@@ -229,6 +246,7 @@ export default function PublishVoyageScreen() {
   const [step, setStep] = useState(0);
   const directionRef = useRef<"forward" | "backward">("forward");
   const [trajetErrorModal, setTrajetErrorModal] = useState<string | null>(null);
+  const [voyageActifModal, setVoyageActifModal] = useState<VoyageActifData | null>(null);
 
   // ── Progression animée ──
   const progressWidth = useSharedValue(SCREEN_W / TOTAL_STEPS);
@@ -401,7 +419,16 @@ export default function PublishVoyageScreen() {
       showToast("Trajet publié avec succès !", "success");
       router.back();
     } catch (e: any) {
-      const detail = e?.response?.data?.detail;
+      const data = e?.response?.data;
+      if (data?.code === "VOYAGE_ACTIF_EXISTANT") {
+        setVoyageActifModal({
+          message: data.message,
+          detail: data.detail,
+          voyage: data.voyage_actif,
+        });
+        return;
+      }
+      const detail = data?.detail;
       const msg = Array.isArray(detail)
         ? detail.map((d: any) => `${d.loc?.slice(-1)[0]}: ${d.msg}`).join("\n")
         : detail ?? getErrorMessage(e);
@@ -615,6 +642,108 @@ export default function PublishVoyageScreen() {
         }}
         onClose={() => setGareTarget(null)}
       />
+
+      {/* ── Modal : voyage actif existant ── */}
+      <Modal
+        visible={voyageActifModal !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setVoyageActifModal(null)}
+      >
+        <View style={alertStyles.overlay}>
+          <View style={vaStyles.card}>
+            {/* En-tête */}
+            <View style={vaStyles.header}>
+              <Text style={vaStyles.icon}>🚦</Text>
+              <Text style={vaStyles.title}>{voyageActifModal?.message}</Text>
+              <Text style={vaStyles.subtitle}>{voyageActifModal?.detail}</Text>
+            </View>
+
+            {/* Carte du voyage existant */}
+            {voyageActifModal && (
+              <View style={vaStyles.voyageCard}>
+                {/* Badge statut */}
+                <View style={[
+                  vaStyles.statutBadge,
+                  voyageActifModal.voyage.statut === "EN_COURS" && vaStyles.statutBadgeEnCours,
+                  voyageActifModal.voyage.statut === "COMPLET"  && vaStyles.statutBadgeComplet,
+                ]}>
+                  <Text style={[
+                    vaStyles.statutTxt,
+                    voyageActifModal.voyage.statut === "EN_COURS" && vaStyles.statutTxtEnCours,
+                    voyageActifModal.voyage.statut === "COMPLET"  && vaStyles.statutTxtComplet,
+                  ]}>
+                    {voyageActifModal.voyage.statut_label}
+                  </Text>
+                </View>
+
+                {/* Trajet */}
+                <View style={vaStyles.routeRow}>
+                  <View style={vaStyles.routeCol}>
+                    <View style={vaStyles.routeDot} />
+                    <View style={vaStyles.routeLine} />
+                    <View style={[vaStyles.routeDot, vaStyles.routeDotEnd]} />
+                  </View>
+                  <View style={vaStyles.routeLabels}>
+                    <View style={vaStyles.routeStop}>
+                      <Text style={vaStyles.routeCity}>{voyageActifModal.voyage.ville_depart}</Text>
+                      <Text style={vaStyles.routePoint} numberOfLines={1}>
+                        {voyageActifModal.voyage.point_depart}
+                      </Text>
+                    </View>
+                    <View style={vaStyles.routeStop}>
+                      <Text style={vaStyles.routeCity}>{voyageActifModal.voyage.ville_arrivee}</Text>
+                    </View>
+                  </View>
+                </View>
+
+                {/* Méta */}
+                <View style={vaStyles.metaRow}>
+                  <View style={vaStyles.metaItem}>
+                    <Text style={vaStyles.metaIcon}>📅</Text>
+                    <Text style={vaStyles.metaVal}>
+                      {format(new Date(voyageActifModal.voyage.date_depart), "EEE d MMM · HH:mm", { locale: fr })}
+                    </Text>
+                  </View>
+                  <View style={vaStyles.metaSep} />
+                  <View style={vaStyles.metaItem}>
+                    <Text style={vaStyles.metaIcon}>💺</Text>
+                    <Text style={vaStyles.metaVal}>
+                      {voyageActifModal.voyage.nombre_places_restantes}/{voyageActifModal.voyage.nombre_places_total} places
+                    </Text>
+                  </View>
+                  <View style={vaStyles.metaSep} />
+                  <View style={vaStyles.metaItem}>
+                    <Text style={vaStyles.metaIcon}>💰</Text>
+                    <Text style={vaStyles.metaVal}>
+                      {voyageActifModal.voyage.prix_par_place.toLocaleString("fr-FR")} F
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            )}
+
+            {/* Boutons */}
+            <View style={alertStyles.btnRow}>
+              <Pressable
+                style={alertStyles.btnSecondary}
+                onPress={() => setVoyageActifModal(null)}
+              >
+                <Text style={alertStyles.btnSecondaryTxt}>Fermer</Text>
+              </Pressable>
+              <Pressable
+                style={alertStyles.btnPrimary}
+                onPress={() => {
+                  setVoyageActifModal(null);
+                  router.push(`/(chauffeur)/voyages/${voyageActifModal!.voyage.id}` as any);
+                }}
+              >
+                <Text style={alertStyles.btnPrimaryTxt}>Voir le voyage</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -1886,6 +2015,135 @@ const optStyles = StyleSheet.create({
     fontFamily: typography.fontFamily.semiBold,
     color: colors.textPrimary,
     textTransform: "capitalize",
+  },
+});
+
+// ─── Styles modal voyage actif ────────────────────────────────────────────────
+
+const vaStyles = StyleSheet.create({
+  card: {
+    backgroundColor: colors.white,
+    borderRadius: radii["2xl"],
+    padding: spacing["2xl"],
+    width: "100%",
+    gap: spacing.xl,
+    ...shadows.lg,
+  },
+  header: {
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  icon: { fontSize: 44 },
+  title: {
+    fontSize: typography.fontSize.xl,
+    fontFamily: typography.fontFamily.bold,
+    color: colors.textPrimary,
+    textAlign: "center",
+  },
+  subtitle: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.regular,
+    color: colors.textSecondary,
+    textAlign: "center",
+    lineHeight: 20,
+  },
+  // Carte voyage
+  voyageCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radii.xl,
+    padding: spacing.xl,
+    gap: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  // Badge statut
+  statutBadge: {
+    alignSelf: "flex-start",
+    paddingHorizontal: spacing.md,
+    paddingVertical: 4,
+    borderRadius: radii.full,
+    backgroundColor: `${colors.primary}15`,
+    borderWidth: 1,
+    borderColor: `${colors.primary}40`,
+  },
+  statutBadgeEnCours: {
+    backgroundColor: colors.infoBg,
+    borderColor: `${colors.info}40`,
+  },
+  statutBadgeComplet: {
+    backgroundColor: colors.warningBg,
+    borderColor: `${colors.warning}60`,
+  },
+  statutTxt: {
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamily.bold,
+    color: colors.primary,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+  },
+  statutTxtEnCours: { color: colors.info },
+  statutTxtComplet: { color: colors.warningText },
+  // Itinéraire
+  routeRow: {
+    flexDirection: "row",
+    gap: spacing.md,
+    alignItems: "stretch",
+  },
+  routeCol: {
+    width: 16,
+    alignItems: "center",
+    paddingTop: 4,
+    gap: 0,
+  },
+  routeDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: colors.primary,
+  },
+  routeDotEnd: { backgroundColor: colors.error },
+  routeLine: {
+    flex: 1,
+    width: 2,
+    backgroundColor: colors.border,
+    marginVertical: 4,
+    minHeight: 20,
+  },
+  routeLabels: { flex: 1, gap: spacing.lg },
+  routeStop: { gap: 2 },
+  routeCity: {
+    fontSize: typography.fontSize.base,
+    fontFamily: typography.fontFamily.bold,
+    color: colors.textPrimary,
+  },
+  routePoint: {
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamily.regular,
+    color: colors.textMuted,
+  },
+  // Méta
+  metaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+  },
+  metaItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  metaIcon: { fontSize: 13 },
+  metaVal: {
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamily.semiBold,
+    color: colors.textSecondary,
+  },
+  metaSep: {
+    width: 3,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: colors.border,
   },
 });
 
