@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   View,
@@ -15,7 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useTranslation } from "react-i18next";
-import { useAuthStore } from "@/src/stores/authStore";
+import { useAuthStore, LAST_PHONE_KEY } from "@/src/stores/authStore";
 import { loginSchema, type LoginForm } from "@/src/utils/validators";
 import { getErrorCode, getErrorMessage } from "@/src/utils/error-handler";
 import { Button } from "@/src/components/ui/Button";
@@ -116,15 +116,33 @@ export default function LoginScreen() {
   const login = useAuthStore((s) => s.login);
   const { showToast } = useToast();
   const [showPassword, setShowPassword] = useState(false);
+  const [savedPhone, setSavedPhone] = useState<string | null>(null);
 
   const {
     control,
     handleSubmit,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<LoginForm>({
     resolver: zodResolver(loginSchema),
     defaultValues: { telephone: "", password: "" },
   });
+
+  // Pré-remplir le téléphone sauvegardé au montage
+  useEffect(() => {
+    AsyncStorage.getItem(LAST_PHONE_KEY).then((phone) => {
+      if (phone) {
+        setSavedPhone(phone);
+        setValue("telephone", phone);
+      }
+    });
+  }, [setValue]);
+
+  const clearSavedPhone = async () => {
+    await AsyncStorage.removeItem(LAST_PHONE_KEY);
+    setSavedPhone(null);
+    setValue("telephone", "");
+  };
 
   const onSubmit = async (data: LoginForm) => {
     try {
@@ -182,6 +200,19 @@ export default function LoginScreen() {
 
         {/* Formulaire */}
         <View style={styles.form}>
+          {/* Bannière compte mémorisé */}
+          {savedPhone ? (
+            <View style={styles.savedBanner}>
+              <Ionicons name="person-circle-outline" size={18} color={colors.primary} />
+              <Text style={styles.savedText} numberOfLines={1}>
+                Compte mémorisé
+              </Text>
+              <Pressable onPress={clearSavedPhone} hitSlop={8} style={styles.savedClear}>
+                <Text style={styles.savedClearText}>Changer de compte</Text>
+              </Pressable>
+            </View>
+          ) : null}
+
           <Controller
             name="telephone"
             control={control}
@@ -189,7 +220,7 @@ export default function LoginScreen() {
               <PhoneInput
                 label={t("auth.login.phone_label")}
                 value={value}
-                onChangeText={onChange}
+                onChangeText={(v) => { onChange(v); if (savedPhone) setSavedPhone(null); }}
                 onBlur={onBlur}
                 error={errors.telephone?.message}
               />
@@ -332,6 +363,37 @@ const styles = StyleSheet.create({
 
   /* Formulaire */
   form: { gap: spacing.lg },
+
+  /* Bannière compte mémorisé */
+  savedBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    backgroundColor: `${colors.primary}10`,
+    borderWidth: 1,
+    borderColor: `${colors.primary}30`,
+    borderRadius: radii.lg,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  savedText: {
+    flex: 1,
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.medium,
+    color: colors.primary,
+  },
+  savedClear: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+    borderRadius: radii.full,
+    backgroundColor: `${colors.primary}18`,
+  },
+  savedClearText: {
+    fontSize: typography.fontSize.xs,
+    fontFamily: typography.fontFamily.semiBold,
+    color: colors.primary,
+  },
+
   forgotLink: { alignSelf: "flex-end" },
   forgotText: {
     fontSize: typography.fontSize.sm,

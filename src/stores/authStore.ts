@@ -1,7 +1,10 @@
 import { create } from "zustand";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { authApi } from "@/src/api/endpoints/auth";
 import { secureStorage, STORAGE_KEYS } from "@/src/utils/secure-storage";
 import type { User } from "@/src/api/types";
+
+export const LAST_PHONE_KEY = "@gotaxi_last_phone";
 
 interface AuthState {
   user: User | null;
@@ -34,6 +37,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const { access_token, refresh_token } = await authApi.login({ telephone, password });
       await secureStorage.set(STORAGE_KEYS.ACCESS_TOKEN, access_token);
       await secureStorage.set(STORAGE_KEYS.REFRESH_TOKEN, refresh_token);
+      // Retenir le numéro pour pré-remplissage après déconnexion
+      await AsyncStorage.setItem(LAST_PHONE_KEY, telephone);
       const user = await authApi.getMe(access_token);
       set({
         user,
