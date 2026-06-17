@@ -1,4 +1,4 @@
-import React, { useCallback } from "react";
+import React, { useCallback, useState } from "react";
 import {
   View,
   Text,
@@ -18,7 +18,9 @@ import { fr } from "date-fns/locale";
 import {
   useMyReservations,
   useCancelReservation,
+  useReservationsANoter,
 } from "@/src/hooks/useReservations";
+import { AvisModal } from "@/src/components/common/AvisModal";
 import { formatFCFA, formatTime } from "@/src/utils/formatters";
 import { getErrorMessage } from "@/src/utils/error-handler";
 import { useToast } from "@/src/components/common/Toast";
@@ -198,12 +200,26 @@ function ReservationCard({ reservation, index }: { reservation: Reservation; ind
 export default function ReservationsScreen() {
   const insets = useSafeAreaInsets();
   const { data, isLoading, refetch, isRefetching } = useMyReservations();
+  const { data: aNoter, refetch: refetchANoter } = useReservationsANoter();
+
+  // IDs des voyages déjà ignorés dans cette session (reset à chaque focus)
+  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+
+  const currentANoter = (aNoter ?? []).find((r) => !dismissed.has(r.voyage_id)) ?? null;
+
+  const handleAvisDismiss = useCallback(() => {
+    if (currentANoter) {
+      setDismissed((prev) => new Set([...prev, currentANoter.voyage_id]));
+    }
+  }, [currentANoter]);
 
   // Recharger à chaque fois que l'onglet prend le focus
   useFocusEffect(
     useCallback(() => {
       refetch();
-    }, [refetch]),
+      refetchANoter();
+      setDismissed(new Set());
+    }, [refetch, refetchANoter]),
   );
 
   const active = data?.filter(
@@ -242,6 +258,8 @@ export default function ReservationsScreen() {
             : <Text style={styles.refreshIcon}>↻</Text>}
         </Pressable>
       </View>
+
+      <AvisModal reservation={currentANoter} onDismiss={handleAvisDismiss} />
 
       {isLoading ? (
         <ActivityIndicator color={colors.primary} style={{ marginTop: spacing["3xl"] }} />

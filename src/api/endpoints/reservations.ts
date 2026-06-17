@@ -45,4 +45,9 @@ export const reservationsApi = {
   cancel: async (id: string): Promise<void> => {
     await apiClient.post(`/reservations/${id}/cancel`);
   },
+
+  aNoter: async (): Promise<Reservation[]> => {
+    const { data } = await apiClient.get<Reservation[]>("/reservations/me/a-noter");
+    return data;
+  },
 };

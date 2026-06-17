@@ -73,6 +73,13 @@ export const useInitierPaiementReservation = () =>
       reservationsApi.initierPaiement(id, telephone),
   });
 
+export const useReservationsANoter = () =>
+  useQuery({
+    queryKey: ["reservations", "a-noter"],
+    queryFn: reservationsApi.aNoter,
+    staleTime: 0,
+  });
+
 export const useStatutPaiementReservation = (id: string, enabled: boolean) => {
   const qc = useQueryClient();
   return useQuery({

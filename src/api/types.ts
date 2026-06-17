@@ -254,6 +254,13 @@ export interface ReservationCreatePayload {
   nombre_places: number;
 }
 
+export interface AvisCreatePayload {
+  voyage_id: string;
+  note: number;
+  commentaire?: string;
+  tags?: string[];
+}
+
 export interface PaiementStatutResult {
   statut: "confirme" | "en_attente" | "echec" | "expire" | "non_initie";
   reservation_statut: ReservationStatus;
