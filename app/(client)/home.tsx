@@ -386,7 +386,7 @@ export default function HomeScreen() {
     mapRef.current?.focusOn(v.lat_depart, v.lng_depart);
   }, []);
 
-  const initials = user ? `${user.prenom[0]}${user.nom[0]}`.toUpperCase() : "?";
+  const photoUrl = resolveMediaUrl(user?.photo_url ?? null);
 
   return (
     <View style={styles.container}>
@@ -418,9 +418,22 @@ export default function HomeScreen() {
             </View>
             <Pressable
               onPress={() => router.push("/(client)/profile" as any)}
-              style={({ pressed }) => [styles.avatarBtn, pressed && { opacity: 0.8 }]}
+              style={({ pressed }) => [
+                styles.avatarBtn,
+                !photoUrl && user?.genre === "HOMME" && styles.avatarBtnHomme,
+                !photoUrl && user?.genre === "FEMME" && styles.avatarBtnFemme,
+                pressed && { opacity: 0.8 },
+              ]}
             >
-              <Text style={styles.avatarText}>{initials}</Text>
+              {photoUrl ? (
+                <Image source={{ uri: photoUrl }} style={styles.avatarPhoto} resizeMode="cover" />
+              ) : user?.genre === "HOMME" ? (
+                <Ionicons name="man" size={22} color={colors.white} />
+              ) : user?.genre === "FEMME" ? (
+                <Ionicons name="woman" size={22} color={colors.white} />
+              ) : (
+                <Ionicons name="person" size={20} color={colors.white} />
+              )}
             </Pressable>
           </View>
         </View>
@@ -697,11 +710,18 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     alignItems: "center",
     justifyContent: "center",
+    overflow: "hidden",
   },
-  avatarText: {
-    fontSize: typography.fontSize.base,
-    fontFamily: typography.fontFamily.bold,
-    color: colors.white,
+  avatarBtnHomme: {
+    backgroundColor: "#1B6FE8",
+  },
+  avatarBtnFemme: {
+    backgroundColor: "#D64F8C",
+  },
+  avatarPhoto: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
   },
   legend: {
     position: "absolute",

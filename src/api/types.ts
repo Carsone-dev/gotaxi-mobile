@@ -1,4 +1,5 @@
 export type UserRole = "CLIENT" | "CHAUFFEUR" | "ADMIN" | "SUPER_ADMIN";
+export type GenreUser = "HOMME" | "FEMME" | "NON_DEFINI";
 export type UserStatus = "ACTIF" | "SUSPENDU" | "EN_ATTENTE_KYC" | "SUPPRIME";
 export type VoyageStatus = "PUBLIE" | "COMPLET" | "EN_COURS" | "TERMINE" | "ANNULE";
 export type ReservationStatus = "EN_ATTENTE_PAIEMENT" | "EN_ATTENTE" | "CONFIRMEE" | "REFUSEE" | "ANNULEE" | "TERMINEE";
@@ -13,6 +14,7 @@ export interface User {
   nom: string;
   prenom: string;
   photo_url: string | null;
+  genre: GenreUser;
   role: UserRole;
   statut: UserStatus;
   telephone_verifie: boolean;

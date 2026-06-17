@@ -19,11 +19,19 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuthStore } from "@/src/stores/authStore";
 import { usersApi } from "@/src/api/endpoints/users";
 import { useToast } from "@/src/components/common/Toast";
+import { resolveMediaUrl } from "@/src/constants/app";
 import { colors, typography, spacing, radii, shadows } from "@/src/theme";
+import type { GenreUser } from "@/src/api/types";
 
 const LANGUES = [
   { code: "fr", label: "🇫🇷  Français" },
   { code: "en", label: "🇬🇧  English" },
+];
+
+const GENRES: { value: GenreUser; label: string; icon: string; color: string }[] = [
+  { value: "HOMME",     label: "Homme",      icon: "man-outline",    color: "#1B6FE8" },
+  { value: "FEMME",     label: "Femme",      icon: "woman-outline",  color: "#D64F8C" },
+  { value: "NON_DEFINI",label: "Préfère ne pas préciser", icon: "person-outline", color: colors.textMuted },
 ];
 
 // ── Champ de formulaire ───────────────────────────────────────────────────────
@@ -98,12 +106,13 @@ export default function EditProfileScreen() {
   const [nom,           setNom]           = useState(user?.nom ?? "");
   const [email,         setEmail]         = useState(user?.email ?? "");
   const [langue,        setLangue]        = useState(user?.langue ?? "fr");
+  const [genre,         setGenre]         = useState<GenreUser>(user?.genre ?? "NON_DEFINI");
   const [saving,        setSaving]        = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [localPhoto,    setLocalPhoto]    = useState<string | null>(null);
   const [errors,        setErrors]        = useState<{ prenom?: string; nom?: string; email?: string }>({});
 
-  const photoUrl = localPhoto ?? user?.photo_url ?? null;
+  const photoUrl = localPhoto ?? resolveMediaUrl(user?.photo_url);
   const initials = `${prenom[0] ?? ""}${nom[0] ?? ""}`.toUpperCase() || "?";
 
   // ── Photo ──────────────────────────────────────────────────────────────────
@@ -177,6 +186,7 @@ export default function EditProfileScreen() {
         prenom: prenom.trim(),
         nom:    nom.trim(),
         langue,
+        genre,
       };
       if (email.trim()) payload.email = email.trim();
 
@@ -196,7 +206,8 @@ export default function EditProfileScreen() {
     prenom.trim() !== (user?.prenom ?? "") ||
     nom.trim()    !== (user?.nom    ?? "") ||
     email.trim()  !== (user?.email  ?? "") ||
-    langue        !== (user?.langue ?? "fr");
+    langue        !== (user?.langue ?? "fr") ||
+    genre         !== (user?.genre  ?? "NON_DEFINI");
 
   return (
     <KeyboardAvoidingView
@@ -309,7 +320,7 @@ export default function EditProfileScreen() {
             </View>
           </View>
 
-          {/* ── Langue ─────────────────────────────────────────────────── */}
+          {/* ── Langue & Genre ─────────────────────────────────────────── */}
           <View style={styles.card}>
             <Text style={styles.cardLabel}>Préférences</Text>
             <View style={styles.cardBody}>
@@ -326,6 +337,34 @@ export default function EditProfileScreen() {
                     </Text>
                   </Pressable>
                 ))}
+              </View>
+
+              <View style={styles.sep} />
+
+              <Text style={[f.label, { marginBottom: 6 }]}>Genre</Text>
+              <View style={styles.genreRow}>
+                {GENRES.map((g) => {
+                  const active = genre === g.value;
+                  return (
+                    <Pressable
+                      key={g.value}
+                      style={[
+                        styles.genreBtn,
+                        active && { borderColor: g.color, backgroundColor: `${g.color}12` },
+                      ]}
+                      onPress={() => setGenre(g.value)}
+                    >
+                      <Ionicons
+                        name={g.icon as any}
+                        size={18}
+                        color={active ? g.color : colors.textMuted}
+                      />
+                      <Text style={[styles.genreBtnText, active && { color: g.color, fontFamily: typography.fontFamily.semiBold }]}>
+                        {g.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
               </View>
             </View>
           </View>
@@ -546,6 +585,25 @@ const styles = StyleSheet.create({
   langBtnTextActive: {
     fontFamily: typography.fontFamily.bold,
     color: colors.primary,
+  },
+
+  /* Genre */
+  genreRow: { flexDirection: "column", gap: spacing.sm },
+  genreBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radii.lg,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  genreBtnText: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.medium,
+    color: colors.textSecondary,
   },
 
   /* Bouton submit */
