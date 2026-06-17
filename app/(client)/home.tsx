@@ -31,6 +31,7 @@ import {
   COUNTRY_REGIONS,
 } from "@/src/components/map/LeafletMapView";
 import type { LeafletMapHandle, LeafletMarker } from "@/src/components/map/LeafletMapView";
+import { ProfileAvatar } from "@/src/components/common/ProfileAvatar";
 import type { Voyage } from "@/src/api/types";
 
 const { height: SCREEN_H } = Dimensions.get("window");
@@ -386,7 +387,7 @@ export default function HomeScreen() {
     mapRef.current?.focusOn(v.lat_depart, v.lng_depart);
   }, []);
 
-  const photoUrl = resolveMediaUrl(user?.photo_url ?? null);
+  const photoUrl = resolveMediaUrl(user?.photo_url ?? null) ?? null;
 
   return (
     <View style={styles.container}>
@@ -416,25 +417,12 @@ export default function HomeScreen() {
                 {user?.prenom} {user?.nom}
               </Text>
             </View>
-            <Pressable
-              onPress={() => router.push("/(client)/profile" as any)}
-              style={({ pressed }) => [
-                styles.avatarBtn,
-                !photoUrl && user?.genre === "HOMME" && styles.avatarBtnHomme,
-                !photoUrl && user?.genre === "FEMME" && styles.avatarBtnFemme,
-                pressed && { opacity: 0.8 },
-              ]}
-            >
-              {photoUrl ? (
-                <Image source={{ uri: photoUrl }} style={styles.avatarPhoto} resizeMode="cover" />
-              ) : user?.genre === "HOMME" ? (
-                <Ionicons name="man" size={22} color={colors.white} />
-              ) : user?.genre === "FEMME" ? (
-                <Ionicons name="woman" size={22} color={colors.white} />
-              ) : (
-                <Ionicons name="person" size={20} color={colors.white} />
-              )}
-            </Pressable>
+            <ProfileAvatar
+              photoUrl={photoUrl}
+              genre={user?.genre}
+              size={42}
+              onPressNoPhoto={() => router.push("/(client)/profile" as any)}
+            />
           </View>
         </View>
 
@@ -702,26 +690,6 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.lg,
     fontFamily: typography.fontFamily.bold,
     color: colors.textPrimary,
-  },
-  avatarBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: colors.primary,
-    alignItems: "center",
-    justifyContent: "center",
-    overflow: "hidden",
-  },
-  avatarBtnHomme: {
-    backgroundColor: "#1B6FE8",
-  },
-  avatarBtnFemme: {
-    backgroundColor: "#D64F8C",
-  },
-  avatarPhoto: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
   },
   legend: {
     position: "absolute",

@@ -25,6 +25,8 @@ import { useIncomingReservations } from "@/src/hooks/useReservations";
 import { useMyVoyages } from "@/src/hooks/useVoyages";
 import { formatFCFA } from "@/src/utils/formatters";
 import { useToast } from "@/src/components/common/Toast";
+import { resolveMediaUrl } from "@/src/constants/app";
+import { ProfileAvatar } from "@/src/components/common/ProfileAvatar";
 import { colors, typography, spacing, radii, shadows } from "@/src/theme";
 import type { Voyage, VoyageStatus } from "@/src/api/types";
 
@@ -258,8 +260,7 @@ export default function DashboardScreen() {
   const { count: colisEnAttenteCount } = useColisEnAttenteCount(voyagesAvecColisActifIds);
 
   const greeting = useMemo(() => getGreeting(), []);
-  const photoUrl = user?.photo_url ?? null;
-  const initials = `${user?.prenom?.[0] ?? ""}${user?.nom?.[0] ?? ""}`.toUpperCase();
+  const photoUrl = resolveMediaUrl(user?.photo_url) ?? null;
 
   const filteredVoyages = useMemo(() => {
     let result = [...(mesVoyages ?? [])];
@@ -326,14 +327,16 @@ export default function DashboardScreen() {
         <View style={styles.deco2} />
 
         <View style={styles.topRow}>
-          <View style={styles.avatarRing}>
-            {photoUrl ? (
-              <Image source={{ uri: photoUrl }} style={styles.avatarImg} resizeMode="cover" />
-            ) : (
-              <View style={styles.avatarFallback}>
-                <Text style={styles.avatarText}>{initials}</Text>
-              </View>
-            )}
+          <View style={styles.avatarWrap}>
+            <ProfileAvatar
+              photoUrl={photoUrl}
+              genre={user?.genre}
+              size={52}
+              ringColor="rgba(255,255,255,0.4)"
+              ringWidth={2}
+              fallbackBg="rgba(255,255,255,0.2)"
+              onPressNoPhoto={() => router.push("/(chauffeur)/profile" as any)}
+            />
             <View style={[styles.onlineDot, isOnline && kycValide ? styles.dotOn : styles.dotOff]} />
           </View>
 
@@ -547,35 +550,21 @@ const styles = StyleSheet.create({
     gap: spacing.md,
     marginBottom: spacing.xl,
   },
-  avatarRing: {
+  avatarWrap: {
+    position: "relative",
     width: 52,
     height: 52,
-    borderRadius: 26,
-    borderWidth: 2,
-    borderColor: "rgba(255,255,255,0.4)",
-    overflow: "hidden",
-  },
-  avatarImg: { width: "100%", height: "100%" },
-  avatarFallback: {
-    flex: 1,
-    backgroundColor: "rgba(255,255,255,0.2)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  avatarText: {
-    fontSize: typography.fontSize.lg,
-    fontFamily: typography.fontFamily.bold,
-    color: colors.white,
   },
   onlineDot: {
     position: "absolute",
-    bottom: 1,
-    right: 1,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
+    bottom: 0,
+    right: 0,
+    width: 13,
+    height: 13,
+    borderRadius: 7,
     borderWidth: 2,
     borderColor: colors.primary,
+    zIndex: 2,
   },
   dotOn: { backgroundColor: colors.yellow },
   dotOff: { backgroundColor: "rgba(255,255,255,0.3)" },
