@@ -14,24 +14,24 @@ import type { WebViewNavigation, WebViewErrorEvent } from "react-native-webview"
 import { Ionicons } from "@expo/vector-icons";
 import { colors, typography, spacing, radii, shadows } from "@/src/theme";
 
-// Patterns d'URL FedaPay indiquant la fin du paiement
-const SUCCESS_PATTERNS = ["approved", "success", "transferred"];
-const FAILURE_PATTERNS = ["declined", "failed", "cancelled", "cancel", "error"];
-const FEDAPAY_HOSTS = ["fedapay.com", "sandbox.fedapay.com", "app.fedapay.com"];
+// Patterns stricts dans les query params FedaPay uniquement — NE PAS fermer sur des mots
+// génériques comme "success" ou "error" qui apparaissent dans des URLs intermédiaires.
+const SUCCESS_QUERY_PATTERNS = ["status=approved", "status=transferred", "payment_status=success"];
+const FAILURE_QUERY_PATTERNS = ["status=declined", "status=failed", "status=cancelled"];
+
+// User-Agent mobile Chrome standard — les pages de paiement rejettent souvent le UA WebView par défaut
+const MOBILE_USER_AGENT =
+  "Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";
 
 function detectPaymentResult(url: string): "success" | "failure" | null {
   if (!url || url === "about:blank") return null;
   const lower = url.toLowerCase();
 
-  // Si l'URL contient un statut explicite
-  if (SUCCESS_PATTERNS.some((p) => lower.includes(p))) return "success";
-  if (FAILURE_PATTERNS.some((p) => lower.includes(p))) return "failure";
+  // Seulement des patterns explicites dans les query strings FedaPay
+  if (SUCCESS_QUERY_PATTERNS.some((p) => lower.includes(p))) return "success";
+  if (FAILURE_QUERY_PATTERNS.some((p) => lower.includes(p))) return "failure";
 
-  // Si FedaPay a redirigé vers un domaine externe (notre return_url)
-  const isFedaPay = FEDAPAY_HOSTS.some((h) => lower.includes(h));
-  if (!isFedaPay) return "success";
-
-  return null;
+  return null; // Laisser la page charger dans tous les autres cas
 }
 
 interface FedaPayWebViewProps {
@@ -72,7 +72,7 @@ export function FedaPayWebView({ paymentUrl, onClose, onPaymentDetected }: FedaP
     <Modal
       visible={!!paymentUrl}
       animationType="slide"
-      presentationStyle={Platform.OS === "ios" ? "pageSheet" : "fullScreen"}
+      presentationStyle="fullScreen"
       onRequestClose={handleClose}
       statusBarTranslucent
     >
@@ -105,13 +105,23 @@ export function FedaPayWebView({ paymentUrl, onClose, onPaymentDetected }: FedaP
             <WebView
               source={{ uri: paymentUrl }}
               style={s.webview}
+              // Compatibilité paiement
+              originWhitelist={["*"]}
               javaScriptEnabled
               domStorageEnabled
+              thirdPartyCookiesEnabled
+              sharedCookiesEnabled
+              allowsInlineMediaPlayback
+              // Critique sur Android : autorise les ressources HTTP dans une page HTTPS
+              mixedContentMode="always"
+              // User-Agent Chrome mobile standard (le UA WebView par défaut est souvent bloqué)
+              userAgent={MOBILE_USER_AGENT}
+              // Callbacks
               onLoadStart={() => { setLoading(true); setHasError(false); }}
               onLoadEnd={() => setLoading(false)}
               onError={handleError}
+              onHttpError={() => setLoading(false)}
               onNavigationStateChange={handleNavChange}
-              allowsBackForwardNavigationGestures={false}
             />
           )}
 
@@ -208,7 +218,7 @@ const s = StyleSheet.create({
   },
 
   webviewWrap: { flex: 1, position: "relative" },
-  webview: { flex: 1 },
+  webview: { flex: 1, backgroundColor: colors.white },
 
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
