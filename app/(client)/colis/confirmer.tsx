@@ -10,7 +10,6 @@ import {
   Modal,
   TextInput,
   KeyboardAvoidingView,
-  Linking,
 } from "react-native";
 import Animated, { FadeIn } from "react-native-reanimated";
 import { router, useLocalSearchParams } from "expo-router";
@@ -24,6 +23,7 @@ import { useAuthStore } from "@/src/stores/authStore";
 import { getErrorMessage } from "@/src/utils/error-handler";
 import { formatFCFA } from "@/src/utils/formatters";
 import { useToast } from "@/src/components/common/Toast";
+import { FedaPayWebView } from "@/src/components/common/FedaPayWebView";
 import { colors, typography, spacing, radii, shadows } from "@/src/theme";
 import type { ColisCategorie } from "@/src/api/types";
 
@@ -85,6 +85,7 @@ export default function ConfirmerColisScreen() {
   const [telephone, setTelephone] = useState(user?.telephone ?? "");
   const [payError, setPayError] = useState("");
   const [paymentUrl, setPaymentUrl] = useState<string | null>(null);
+  const [webviewOpen, setWebviewOpen] = useState(false);
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -155,11 +156,11 @@ export default function ConfirmerColisScreen() {
     try {
       const result = await initierPaiement({ id: colisId, telephone: telephone.trim() });
       setPaymentUrl(result.payment_url ?? null);
-      if (result.payment_url) {
-        await Linking.openURL(result.payment_url);
-      }
       setPayStep("waiting");
       startPolling(colisId);
+      if (result.payment_url) {
+        setWebviewOpen(true);
+      }
     } catch (e) {
       setPayError(getErrorMessage(e));
     }
@@ -296,6 +297,12 @@ export default function ConfirmerColisScreen() {
         <Text style={styles.footerHint}>En confirmant, vous acceptez les conditions d'envoi GoTaxi</Text>
       </View>
 
+      {/* ── WebView paiement in-app ── */}
+      <FedaPayWebView
+        paymentUrl={webviewOpen ? paymentUrl : null}
+        onClose={() => setWebviewOpen(false)}
+      />
+
       {/* ── Modal paiement ── */}
       <Modal visible={payModal} transparent animationType="fade" onRequestClose={handleAnnuler}>
         <KeyboardAvoidingView style={ms.kav} behavior={Platform.OS === "ios" ? "padding" : "height"}>
@@ -356,9 +363,9 @@ export default function ConfirmerColisScreen() {
                   {paymentUrl ? (
                     <Pressable
                       style={ms.btnPrimary}
-                      onPress={() => Linking.openURL(paymentUrl)}
+                      onPress={() => setWebviewOpen(true)}
                     >
-                      <Text style={ms.btnPrimaryTxt}>Rouvrir la page de paiement</Text>
+                      <Text style={ms.btnPrimaryTxt}>Rouvrir le paiement</Text>
                     </Pressable>
                   ) : (
                     <View style={ms.waitingHint}>

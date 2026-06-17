@@ -10,7 +10,6 @@ import {
   Modal,
   TextInput,
   KeyboardAvoidingView,
-  Linking,
 } from "react-native";
 import Animated, { FadeInDown, FadeIn } from "react-native-reanimated";
 import { router, useLocalSearchParams } from "expo-router";
@@ -23,6 +22,7 @@ import { useAuthStore } from "@/src/stores/authStore";
 import { formatFCFA, formatTime } from "@/src/utils/formatters";
 import { getErrorMessage } from "@/src/utils/error-handler";
 import { useToast } from "@/src/components/common/Toast";
+import { FedaPayWebView } from "@/src/components/common/FedaPayWebView";
 import { colors, typography, spacing, radii, shadows } from "@/src/theme";
 
 type PayStep = "phone" | "waiting" | "success" | "error";
@@ -39,6 +39,7 @@ export default function ConfirmScreen() {
   const [telephone, setTelephone] = useState(user?.telephone ?? "");
   const [payError, setPayError] = useState("");
   const [paymentUrl, setPaymentUrl] = useState<string | null>(null);
+  const [webviewOpen, setWebviewOpen] = useState(false);
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -108,11 +109,11 @@ export default function ConfirmScreen() {
     try {
       const result = await initierPaiement({ id: reservationId, telephone: telephone.trim() });
       setPaymentUrl(result.payment_url ?? null);
-      if (result.payment_url) {
-        await Linking.openURL(result.payment_url);
-      }
       setPayStep("waiting");
       startPolling(reservationId);
+      if (result.payment_url) {
+        setWebviewOpen(true);
+      }
     } catch (e) {
       setPayError(getErrorMessage(e));
     }
@@ -247,6 +248,12 @@ export default function ConfirmScreen() {
         </Text>
       </View>
 
+      {/* ── WebView paiement in-app ── */}
+      <FedaPayWebView
+        paymentUrl={webviewOpen ? paymentUrl : null}
+        onClose={() => setWebviewOpen(false)}
+      />
+
       {/* ── Modal paiement FedaPay ── */}
       <Modal visible={payModal} transparent animationType="fade" onRequestClose={handleAnnulerPaiement}>
         <KeyboardAvoidingView style={ms.kav} behavior={Platform.OS === "ios" ? "padding" : "height"}>
@@ -311,9 +318,9 @@ export default function ConfirmScreen() {
                   {paymentUrl ? (
                     <Pressable
                       style={ms.btnPrimary}
-                      onPress={() => Linking.openURL(paymentUrl)}
+                      onPress={() => setWebviewOpen(true)}
                     >
-                      <Text style={ms.btnPrimaryTxt}>Rouvrir la page de paiement</Text>
+                      <Text style={ms.btnPrimaryTxt}>Rouvrir le paiement</Text>
                     </Pressable>
                   ) : (
                     <View style={ms.waitingHint}>
