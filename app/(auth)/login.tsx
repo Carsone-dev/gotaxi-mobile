@@ -10,6 +10,8 @@ import {
   Pressable,
 } from "react-native";
 import { router } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useTranslation } from "react-i18next";
@@ -20,10 +22,97 @@ import { Button } from "@/src/components/ui/Button";
 import { Input } from "@/src/components/ui/Input";
 import { PhoneInput } from "@/src/components/ui/PhoneInput";
 import { useToast } from "@/src/components/common/Toast";
-import { colors, typography, spacing } from "@/src/theme";
+import { colors, typography, spacing, radii, shadows } from "@/src/theme";
 
+// ── Logo GoTaxi ───────────────────────────────────────────────────────────────
+function GoTaxiLogo() {
+  return (
+    <View style={logo.wrap}>
+      {/* Icône */}
+      <View style={logo.iconRing}>
+        <View style={logo.iconInner}>
+          <Ionicons name="car-sport" size={32} color={colors.primary} />
+        </View>
+        {/* Petit badge jaune */}
+        <View style={logo.badge}>
+          <Ionicons name="location-sharp" size={9} color={colors.primary} />
+        </View>
+      </View>
+
+      {/* Texte */}
+      <View style={logo.textRow}>
+        <Text style={logo.go}>Go</Text>
+        <Text style={logo.taxi}>Taxi</Text>
+      </View>
+
+      {/* Tagline */}
+      <Text style={logo.tagline}>Votre taxi interurbain au Bénin</Text>
+    </View>
+  );
+}
+
+const logo = StyleSheet.create({
+  wrap: { alignItems: "center", gap: 10 },
+  iconRing: {
+    width: 86,
+    height: 86,
+    borderRadius: 43,
+    backgroundColor: "rgba(255,255,255,0.15)",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1.5,
+    borderColor: "rgba(255,255,255,0.25)",
+  },
+  iconInner: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: colors.white,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  badge: {
+    position: "absolute",
+    bottom: 4,
+    right: 4,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: colors.yellow,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: colors.primary,
+  },
+  textRow: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    gap: 1,
+  },
+  go: {
+    fontSize: 38,
+    fontFamily: typography.fontFamily.extraBold,
+    color: colors.white,
+    letterSpacing: -0.5,
+  },
+  taxi: {
+    fontSize: 38,
+    fontFamily: typography.fontFamily.extraBold,
+    color: colors.yellow,
+    letterSpacing: -0.5,
+  },
+  tagline: {
+    fontSize: typography.fontSize.sm,
+    fontFamily: typography.fontFamily.medium,
+    color: "rgba(255,255,255,0.75)",
+    letterSpacing: 0.3,
+  },
+});
+
+// ── Écran connexion ───────────────────────────────────────────────────────────
 export default function LoginScreen() {
   const { t } = useTranslation();
+  const insets = useSafeAreaInsets();
   const login = useAuthStore((s) => s.login);
   const { showToast } = useToast();
   const [showPassword, setShowPassword] = useState(false);
@@ -66,22 +155,32 @@ export default function LoginScreen() {
 
   return (
     <KeyboardAvoidingView
-      style={styles.container}
+      style={styles.root}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
+      {/* ── Hero vert ── */}
+      <View style={[styles.hero, { paddingTop: insets.top + 36 }]}>
+        {/* Cercles décoratifs */}
+        <View style={styles.deco1} />
+        <View style={styles.deco2} />
+        <View style={styles.deco3} />
+        <GoTaxiLogo />
+      </View>
+
+      {/* ── Card blanche ── */}
       <ScrollView
-        contentContainerStyle={styles.content}
+        style={styles.card}
+        contentContainerStyle={[styles.cardContent, { paddingBottom: insets.bottom + 32 }]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.header}>
-          <View style={styles.logo}>
-            <Text style={styles.logoLetter}>G</Text>
-          </View>
-          <Text style={styles.title}>{t("auth.login.title")}</Text>
-          <Text style={styles.subtitle}>{t("auth.login.subtitle")}</Text>
+        {/* En-tête card */}
+        <View style={styles.cardHeader}>
+          <Text style={styles.cardTitle}>Bon retour ! 👋</Text>
+          <Text style={styles.cardSub}>Connectez-vous à votre compte</Text>
         </View>
 
+        {/* Formulaire */}
         <View style={styles.form}>
           <Controller
             name="telephone"
@@ -112,9 +211,13 @@ export default function LoginScreen() {
                 autoComplete="password"
                 testID="password-input"
                 rightIcon={
-                  <Text style={styles.eyeIcon}>{showPassword ? "🙈" : "👁️"}</Text>
+                  <Ionicons
+                    name={showPassword ? "eye-off-outline" : "eye-outline"}
+                    size={20}
+                    color={colors.textMuted}
+                  />
                 }
-                onRightIconPress={() => setShowPassword(!showPassword)}
+                onRightIconPress={() => setShowPassword((v) => !v)}
               />
             )}
           />
@@ -122,11 +225,13 @@ export default function LoginScreen() {
           <Pressable
             onPress={() => router.push("/(auth)/forgot-password")}
             style={styles.forgotLink}
+            hitSlop={8}
           >
             <Text style={styles.forgotText}>{t("auth.login.forgot")}</Text>
           </Pressable>
         </View>
 
+        {/* Actions */}
         <View style={styles.actions}>
           <Button
             testID="login-button"
@@ -138,15 +243,17 @@ export default function LoginScreen() {
             {t("auth.login.submit")}
           </Button>
 
+          {/* Séparateur */}
           <View style={styles.dividerRow}>
             <View style={styles.dividerLine} />
             <Text style={styles.dividerLabel}>{t("common.or")}</Text>
             <View style={styles.dividerLine} />
           </View>
 
+          {/* Inscription */}
           <View style={styles.registerRow}>
             <Text style={styles.registerHint}>{t("auth.login.no_account")} </Text>
-            <Pressable onPress={() => router.push("/(auth)/register")}>
+            <Pressable onPress={() => router.push("/(auth)/register")} hitSlop={8}>
               <Text style={styles.registerLink}>{t("auth.login.sign_up")}</Text>
             </Pressable>
           </View>
@@ -156,58 +263,103 @@ export default function LoginScreen() {
   );
 }
 
+// ── Styles ────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.white },
-  content: {
-    flexGrow: 1,
+  root: { flex: 1, backgroundColor: colors.primary },
+
+  /* Hero */
+  hero: {
     paddingHorizontal: spacing["2xl"],
-    paddingTop: 72,
-    paddingBottom: 40,
-    gap: spacing["3xl"],
-  },
-  header: { alignItems: "center", gap: spacing.lg },
-  logo: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: colors.primary,
+    paddingBottom: 48,
     alignItems: "center",
-    justifyContent: "center",
+    overflow: "hidden",
+    position: "relative",
   },
-  logoLetter: {
-    fontSize: 40,
-    fontFamily: typography.fontFamily.extraBold,
-    color: colors.white,
-    lineHeight: 48,
+  deco1: {
+    position: "absolute",
+    width: 260,
+    height: 260,
+    borderRadius: 130,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    top: -80,
+    right: -80,
   },
-  title: {
+  deco2: {
+    position: "absolute",
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    backgroundColor: "rgba(255,255,255,0.05)",
+    bottom: -20,
+    left: -50,
+  },
+  deco3: {
+    position: "absolute",
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    backgroundColor: "rgba(0,0,0,0.08)",
+    top: 30,
+    left: 20,
+  },
+
+  /* Card blanche */
+  card: {
+    flex: 1,
+    backgroundColor: colors.white,
+    borderTopLeftRadius: radii["2xl"],
+    borderTopRightRadius: radii["2xl"],
+    ...shadows.lg,
+  },
+  cardContent: {
+    paddingHorizontal: spacing["2xl"],
+    paddingTop: spacing["2xl"],
+    gap: spacing["2xl"],
+  },
+
+  /* En-tête card */
+  cardHeader: { gap: spacing.xs },
+  cardTitle: {
     fontSize: typography.fontSize["3xl"],
     fontFamily: typography.fontFamily.bold,
     color: colors.textPrimary,
   },
-  subtitle: {
+  cardSub: {
     fontSize: typography.fontSize.base,
     fontFamily: typography.fontFamily.regular,
     color: colors.textSecondary,
   },
-  form: { gap: spacing.xl },
+
+  /* Formulaire */
+  form: { gap: spacing.lg },
   forgotLink: { alignSelf: "flex-end" },
   forgotText: {
     fontSize: typography.fontSize.sm,
     fontFamily: typography.fontFamily.semiBold,
     color: colors.primary,
   },
-  eyeIcon: { fontSize: 18 },
+
+  /* Actions */
   actions: { gap: spacing.xl },
   submitBtn: { width: "100%" },
-  dividerRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
+
+  dividerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+  },
   dividerLine: { flex: 1, height: 1, backgroundColor: colors.border },
   dividerLabel: {
     fontSize: typography.fontSize.sm,
     fontFamily: typography.fontFamily.medium,
     color: colors.textMuted,
   },
-  registerRow: { flexDirection: "row", justifyContent: "center", alignItems: "center" },
+
+  registerRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+  },
   registerHint: {
     fontSize: typography.fontSize.base,
     fontFamily: typography.fontFamily.regular,
